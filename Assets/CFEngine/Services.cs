@@ -3,9 +3,7 @@ using CrystalFrost.Assets;
 using CrystalFrost.Assets.CFEngine.WorldState;
 using CrystalFrost.Assets.Mesh;
 using CrystalFrost.Assets.Textures;
-using CrystalFrost.Assets.Textures.OpenJ2K;
-
-using CrystalFrost.Assets.Textures.AVLJ2K;
+using CrystalFrost.Assets.Textures.CSJ2K;
 using CrystalFrost.Client.Credentials;
 using CrystalFrost.Config;
 using CrystalFrost.Exceptions;
@@ -82,27 +80,42 @@ namespace CrystalFrost
 
 		private static void RegisterComponents()
 		{
+			RegisterConfiguration();
+			RegisterLogging();
+			RegisterGridClient();
+			RegisterAssetServices();
+			RegisterWorldStateServices();
+			RegisterUnityServices();
 
-            Services._configRoot = new ConfigurationBuilder()
-                // Logging config is handled as the Logging subsection of the main config.
-                .AddInMemoryCollection(LoggingConfig.DefaultValues)
-                // .AddJsonFile("cf-config.json", optional: true, reloadOnChange: true)
-                // .AddEnvironmentVariables("CF_")
-                // .AddCommandLine(Environment.GetCommandLineArgs())
-                .Build();
+			// object pooling
+			_serviceCollection.AddSingleton<IObjectPoolingService, ObjectPoolingService>();
 
-            // UnityEngine.Debug.Log(Services._configRoot.GetDebugView()); // For debugging configuration
+			// a way to signal to background threads to stop, so the application can close gracefully.
+			_serviceCollection.AddSingleton<IProvideShutdownSignal, ProvideShutdownSignal>();
 
-            // Add IOptions config for the individual config sections
-            // This will allow someone to inject IOptions<CodeConfig> to get the config params.
-            //     Using the IOptions interface allows the config to be changed at runtime
-            //     (see IOptionsSnapshot for more info).
-            _serviceCollection.Configure<GridConfig>(Services._configRoot.GetSection(GridConfig.subsectionName));
-            _serviceCollection.Configure<CodeConfig>(Services._configRoot.GetSection(CodeConfig.subsectionName));
-            _serviceCollection.Configure<MeshConfig>(Services._configRoot.GetSection(MeshConfig.subsectionName));
-            _serviceCollection.Configure<TextureConfig>(Services._configRoot.GetSection(TextureConfig.subsectionName));
-            _serviceCollection.Configure<LoggingConfig>(Services._configRoot.GetSection(LoggingConfig.subsectionName));
+			_log.DIRegistrationComplete();
+		}
 
+		private static void RegisterConfiguration()
+		{
+			Services._configRoot = new ConfigurationBuilder()
+				// Logging config is handled as the Logging subsection of the main config.
+				.AddInMemoryCollection(LoggingConfig.DefaultValues)
+				// .AddJsonFile("cf-config.json", optional: true, reloadOnChange: true)
+				// .AddEnvironmentVariables("CF_")
+				// .AddCommandLine(Environment.GetCommandLineArgs())
+				.Build();
+
+			// Add IOptions config for the individual config sections
+			_serviceCollection.Configure<GridConfig>(Services._configRoot.GetSection(GridConfig.subsectionName));
+			_serviceCollection.Configure<CodeConfig>(Services._configRoot.GetSection(CodeConfig.subsectionName));
+			_serviceCollection.Configure<MeshConfig>(Services._configRoot.GetSection(MeshConfig.subsectionName));
+			_serviceCollection.Configure<TextureConfig>(Services._configRoot.GetSection(TextureConfig.subsectionName));
+			_serviceCollection.Configure<LoggingConfig>(Services._configRoot.GetSection(LoggingConfig.subsectionName));
+		}
+
+		private static void RegisterLogging()
+		{
 			// The logging config will usually come out of ConfigRoot
 			var loggingConfig = LoggingConfiguration.GetLoggingConfiguration();
 			// for now use the logger that uses UnityEngine.Debug
@@ -128,6 +141,12 @@ namespace CrystalFrost
 					.AddProvider(loggingProvder);
 			});
 
+			// capture logging from LibMetaverse
+			_serviceCollection.AddSingleton<ILMVLogger, LMVLogger>();
+		}
+
+		private static void RegisterGridClient()
+		{
 			_serviceCollection.AddSingleton<ILoginUriProvider, LoginUriProvider>();
 
 			// provide a grid client factory, so that a GridClient can be created when
@@ -145,10 +164,10 @@ namespace CrystalFrost
 			_serviceCollection.AddSingleton<IAesEncryptor, AesEncryptor>();
 
 			_serviceCollection.AddScoped(p => p.GetService<ICredentialsStoreFactory>().GetCredentialsStore());
+		}
 
-			// a way to signal to background threads to stop, so the application can close gracefully.
-			_serviceCollection.AddSingleton<IProvideShutdownSignal, ProvideShutdownSignal>();
-
+		private static void RegisterAssetServices()
+		{
 			// Mesh Stuff
 			_serviceCollection.AddSingleton<IDecodedMeshQueue, DecodedMeshQueue>();
 			_serviceCollection.AddSingleton<IMeshRequestQueue, MeshRequestQueue>();
@@ -164,8 +183,8 @@ namespace CrystalFrost
 			// decode images
 			_serviceCollection.AddScoped<ITgaReader, TgaReader>();
 			// _serviceCollection.AddScoped<ITextureDecoder, OpenJ2KTextureDecoder>();
-			//_serviceCollection.AddScoped<ITextureDecoder, CSJ2KTextureDecoder>();
-			_serviceCollection.AddScoped<ITextureDecoder, AVLJ2KTextureDecoder>();
+			_serviceCollection.AddScoped<ITextureDecoder, CSJ2KTextureDecoder>();
+			// _serviceCollection.AddScoped<ITextureDecoder, AVLJ2KTextureDecoder>();
 
 			// texture manager
 			_serviceCollection.AddSingleton<ITextureManager, TextureManager>();
@@ -192,20 +211,10 @@ namespace CrystalFrost
 
 			// asset manager.
 			_serviceCollection.AddSingleton<IAssetManager, AssetManager>();
+		}
 
-			// object pooling
-			_serviceCollection.AddSingleton<IObjectPoolingService, ObjectPoolingService>();
-
-			// puts the unity application and editor modes behind an abstraction
-			// (facilitates unit testing)
-			_serviceCollection.AddSingleton<IUnityEditorEvents, UnityEditorEvents>();
-			_serviceCollection.AddSingleton<IEngineBehaviorEvents, EngineBehaviorEvents>();
-
-			_serviceCollection.AddSingleton<ITransformTexCoords, TransformTexCoordsForUnity>();
-
-			_serviceCollection.AddSingleton<IGlobalExceptionHandler, GlobalExceptionHandler>();
-
-			// world state stuff
+		private static void RegisterWorldStateServices()
+		{
 			_serviceCollection.AddSingleton<IHandleTerseUpdate, HandleTerseUpdate>();
 			_serviceCollection.AddSingleton<IHandleObjectUpdate, HandleObjectUpdate>();
 			_serviceCollection.AddSingleton<IHandleObjectBlockDataUpdate, HandleObjectBlockDataUpdate>();
@@ -217,13 +226,18 @@ namespace CrystalFrost
 			_serviceCollection.AddSingleton<IUnityRenderManager, UnityRenderManager>();
 			_serviceCollection.AddSingleton<IAllSceneObjects, AllSceneObjects>();
 			_serviceCollection.AddSingleton<ISceneObjectsNeedingRenderersQueue, SceneObjectsNeedingRenderersQueue>();
+		}
 
-			// capture logging from LibMetaverse
-			_serviceCollection.AddSingleton<ILMVLogger, LMVLogger>();
+		private static void RegisterUnityServices()
+		{
+			// puts the unity application and editor modes behind an abstraction
+			// (facilitates unit testing)
+			_serviceCollection.AddSingleton<IUnityEditorEvents, UnityEditorEvents>();
+			_serviceCollection.AddSingleton<IEngineBehaviorEvents, EngineBehaviorEvents>();
 
-			// add more registrations here.
+			_serviceCollection.AddSingleton<ITransformTexCoords, TransformTexCoordsForUnity>();
 
-			_log.DIRegistrationComplete();
+			_serviceCollection.AddSingleton<IGlobalExceptionHandler, GlobalExceptionHandler>();
 		}
 	}
 }

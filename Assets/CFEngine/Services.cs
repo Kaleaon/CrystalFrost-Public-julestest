@@ -51,6 +51,13 @@ namespace CrystalFrost
 				?? throw new ApplicationException($"There requested type {typeof(T).FullName} could not be provided.");
 		}
 
+		// This method is for testing purposes only
+		public static void RegisterService<T>(object service) where T : class
+		{
+			_serviceCollection.AddSingleton(typeof(T), service);
+			_serviceProvider = _serviceCollection.BuildServiceProvider();
+		}
+
         /// <summary>
         /// Configuration root for the application.
         /// This is built up from defaults, config files, environment variables, and command line arguments.
@@ -206,6 +213,7 @@ namespace CrystalFrost
 			_serviceCollection.AddSingleton<IGlobalExceptionHandler, GlobalExceptionHandler>();
 
 			// world state stuff
+			_serviceCollection.AddSingleton<CrystalFrost.WorldState.ISkeletonManager, CrystalFrost.WorldState.SkeletonManager>();
 			_serviceCollection.AddSingleton<IHandleTerseUpdate, HandleTerseUpdate>();
 			_serviceCollection.AddSingleton<IHandleObjectUpdate, HandleObjectUpdate>();
 			_serviceCollection.AddSingleton<IHandleObjectBlockDataUpdate, HandleObjectBlockDataUpdate>();

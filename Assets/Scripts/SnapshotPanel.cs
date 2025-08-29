@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.IO;
+using OpenMetaverse;
+using OpenMetaverse.Imaging;
 
 public class SnapshotPanel : MonoBehaviour
 {
@@ -15,6 +17,7 @@ public class SnapshotPanel : MonoBehaviour
     public Button RefreshButton;
     public Button SaveToDiskButton;
     public Button SaveToInventoryButton;
+    public TMPro.TMP_Text StatusText;
 
     private Texture2D lastSnapshot;
     private Canvas canvas;
@@ -33,8 +36,6 @@ public class SnapshotPanel : MonoBehaviour
         RefreshButton.onClick.AddListener(TakeSnapshot);
         SaveToDiskButton.onClick.AddListener(SaveSnapshotToDisk);
 
-        // Disable "Save to Inventory" as it's not implemented
-        SaveToInventoryButton.interactable = false;
         SaveToInventoryButton.onClick.AddListener(SaveSnapshotToInventory);
 
 
@@ -44,6 +45,7 @@ public class SnapshotPanel : MonoBehaviour
 
     public void TakeSnapshot()
     {
+        if (StatusText != null) StatusText.text = "";
         // This is a coroutine, so we need to start it
         StartCoroutine(CaptureScreenshot());
     }
@@ -107,19 +109,59 @@ public class SnapshotPanel : MonoBehaviour
     {
         if (lastSnapshot != null)
         {
+            if (StatusText != null) StatusText.text = "Saving to disk...";
             byte[] bytes = lastSnapshot.EncodeToPNG();
             string path = Path.Combine(Application.persistentDataPath, $"snapshot_{System.DateTime.Now:yyyy-MM-dd_HH-mm-ss}.png");
             File.WriteAllBytes(path, bytes);
+            if (StatusText != null) StatusText.text = $"Saved to {path}";
             Debug.Log($"Snapshot saved to {path}");
         }
         else
         {
+            if (StatusText != null) StatusText.text = "No snapshot to save.";
             Debug.LogWarning("No snapshot to save.");
         }
     }
 
     void SaveSnapshotToInventory()
     {
-        Debug.Log("Save to inventory not implemented yet.");
+        if (lastSnapshot != null)
+        {
+            if (StatusText != null) StatusText.text = "Encoding texture...";
+            byte[] jpeg2000Data;
+            try
+            {
+                jpeg2000Data = OpenJPEG.EncodeFromImage(lastSnapshot, true);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to encode snapshot to JPEG2000: {e.Message}");
+                if (StatusText != null) StatusText.text = "Error encoding texture.";
+                return;
+            }
+
+            if (StatusText != null) StatusText.text = "Uploading image...";
+            UUID photoAlbumID = ClientManager.client.Inventory.FindFolderForType(FolderType.PhotoAlbum);
+            string name = $"Snapshot {System.DateTime.Now:yyyy-MM-dd HH-mm-ss}";
+
+            ClientManager.client.Inventory.RequestUploadImage(jpeg2000Data, name, "Snapshot taken with Crystal Frost", photoAlbumID, (success, status, itemID, assetID) =>
+            {
+                if (success)
+                {
+                    if (StatusText != null) StatusText.text = "Snapshot saved to inventory!";
+                    Debug.Log($"Snapshot saved to inventory with item ID {itemID}");
+                }
+                else
+                {
+                    if (StatusText != null) StatusText.text = $"Error saving to inventory: {status}";
+                    Debug.LogError($"Failed to save snapshot to inventory: {status}");
+                }
+            });
+        }
+        else
+        {
+            if (StatusText != null) StatusText.text = "No snapshot to save.";
+            Debug.LogWarning("No snapshot to save.");
+        }
     }
 }

@@ -1,21 +1,33 @@
 # Crystal Frost Viewer Roadmap
 
-This document outlines a roadmap of potential improvements for the Crystal Frost viewer. It is a living document that can be updated as the project evolves.
+This document outlines a roadmap of potential improvements for the Crystal Frost viewer. It is a living document that will be updated as we research and prioritize tasks.
 
-## To Make it Better (Improve Stability and User Experience)
+## Prioritized Task List
 
-*   **Build a Comprehensive Test Suite:** The project is set up for testing with `Moq`, but it needs a suite of unit and integration tests. This is the most critical step for ensuring stability and preventing bugs as new features are added.
-*   **Enhance Logging and Error Reporting:** A robust system for logging and automatically reporting errors or crashes would make it much easier to find and fix issues that users encounter.
-*   **Focus on UI/UX:** A polished, intuitive, and responsive user interface is key to a good user experience. Investing time in designing and implementing a high-quality UI using Unity's tools would be a major improvement.
+### P0: Critical Bugs
+1.  **Fix Bento Mesh Rendering:** The highest priority is to fix the rendering of Bento-enhanced avatars. This is a major functional bug that prevents a large amount of user-created content from being displayed correctly.
+    *   **Sub-task:** Implement a `SkeletonManager` to load and manage the hierarchical skeleton from `avatar_skeleton.xml`.
+    *   **Sub-task:** Refactor the mesh decoding logic (`RiggedMesh.cs`) to use the `SkeletonManager` and correctly apply skinning based on the full skeleton hierarchy.
+    *   **Sub-task:** Write unit tests for the `SkeletonManager` and the new skinning logic to ensure correctness and prevent regressions.
 
-## To Make it More Efficient (Improve Performance)
+### P1: High-Impact Performance & User Experience
+2.  **Implement Network & Rezzing Diagnostics:** Slow "rezzing" (loading) of objects and textures is a very common problem for users. Providing tools to diagnose the cause is a high-impact improvement.
+    *   **Sub-task:** Add a UI element to display real-time packet loss and ping to the simulator.
+    *   **Sub-task:** Investigate and potentially implement a more detailed network diagnostics tool.
+3.  **Implement Progressive Draw Distance:** This will significantly improve the user experience when teleporting to new, complex regions.
+    *   **Sub-task:** Create a system that automatically reduces draw distance on teleport and then smoothly increases it as the scene loads.
+4.  **Optimize Asset Pipeline:** The efficiency of the asset pipeline is critical for rezzing speed and overall performance.
+    *   **Sub-task:** Profile the mesh and texture decoding process to identify bottlenecks.
+    *   **Sub-task:** Move asset decoding to background threads to avoid stalling the main rendering thread.
+    *   **Sub-task:** Investigate more efficient texture compression formats and loading strategies.
 
-*   **Systematic Profiling:** Use Unity's Profiler to identify performance bottlenecks. Regularly profile CPU usage, memory allocations (to reduce garbage collection), and rendering performance.
-*   **Optimize Asset Handling:** The systems for loading meshes, textures, and animations are central to performance. You could explore more advanced asset bundling, texture compression, and caching strategies to reduce memory usage and loading times.
-*   **Embrace Data-Oriented Design (DOTS):** For a significant performance leap, consider migrating performance-critical systems to Unity's Entity Component System (ECS). This is ideal for rendering the massive number of objects and avatars found in a virtual world.
+### P2: General Performance & Features
+5.  **Optimize UI Performance:** A laggy UI can make the entire viewer feel unresponsive.
+    *   **Sub-task:** Profile the UI to identify any performance hotspots.
+    *   **Sub-task:** Refactor the UI to follow Unity's best practices (e.g., splitting canvases, limiting raycasters).
+6.  **Implement Auto-FPS Feature:** This feature, common in other viewers, helps maintain a smooth experience by dynamically adjusting settings.
+    *   **Sub-task:** Design and implement a system to dynamically adjust graphics settings to maintain a target framerate.
 
-## To Add More Advanced Features (Improve Architecture and Extensibility)
-
-*   **Complete the Architectural Documentation:** The `Design.md` file is a good start, but it's incomplete. A clear, up-to-date architectural document is essential for guiding future development and making it easier for new contributors to join the project.
-*   **Leverage the Universal Render Pipeline (URP):** Unity's URP makes it much easier to add advanced graphical features like custom shaders, post-processing effects, and modern lighting. This is a key advantage over older viewers.
-*   **Develop a Modular/Plugin Architecture:** Continue building on the existing service-based architecture to create a system where new features can be developed as independent modules or plugins. This would make the viewer highly extensible and customizable.
+### P3: Long-Term Architectural Improvements
+7.  **Explore DOTS/ECS:** For a major performance leap, especially with many avatars, a data-oriented approach is worth investigating.
+    *   **Sub-task:** Investigate the feasibility of migrating the rendering of avatars and other scene objects to Unity's Data-Oriented Technology Stack (DOTS).

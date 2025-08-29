@@ -13,5 +13,8 @@ public class SceneInitializer : MonoBehaviour
         // Add the NetworkStatsDisplay component to the GameObject.
         // This will trigger its Start() method, which creates the UI.
         statsDisplayGo.AddComponent<NetworkStatsDisplay>();
+
+        // Add the ProgressiveDrawDistance component to the GameObject.
+        statsDisplayGo.AddComponent<ProgressiveDrawDistance>();
     }
 }

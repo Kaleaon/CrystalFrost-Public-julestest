@@ -16,8 +16,7 @@ namespace OpenMetaverse.Rendering
 		public string Name;
 		public float[] InverseBindMatrix;
 		public float[] AltInverseBindMatrix;
-		public int Parent;
-		public Vector3 SkinOffset;
+		// public int Parent;
 
 		public Matrix4x4 InverseBindMatrixUnity
 		{
@@ -347,63 +346,20 @@ namespace OpenMetaverse.Rendering
 
 					if (skinMap["joint_names"] is OSDArray jnOsd && skinMap["inverse_bind_matrix"] is OSDArray ibmOsd)
 					{
-						var skeletonManager = CrystalFrost.Services.GetService<CrystalFrost.WorldState.ISkeletonManager>();
 						var jointCount = jnOsd.Count;
 
-						// Create a list of the joints that are relevant to this specific mesh
-						var meshJoints = new List<JointInfo>();
-						// Create a map to remap the full skeleton index to the mesh-specific skeleton index
-						var skeletonIndexToMeshIndex = new Dictionary<int, int>();
+						mesh.Joints = new JointInfo[jointCount];
 
 						for (var i = 0; i < jointCount; i++)
 						{
-							var jointName = jnOsd[i].AsString();
-							var jointInfo = skeletonManager.GetJoint(jointName);
-
-							if (jointInfo != null)
+							JointInfo jointInfo = new JointInfo();
+							jointInfo.Name = jnOsd[i].AsString();
+							if (!TryDecodeMatrixFromOSD(ibmOsd[i], out jointInfo.InverseBindMatrix))
 							{
-								// This is a new JointInfo object that copies the properties from the skeleton manager.
-								// This is important because the InverseBindMatrix is specific to this mesh.
-								var meshJoint = new JointInfo
-								{
-									Name = jointInfo.Name,
-									Parent = jointInfo.Parent,
-									SkinOffset = jointInfo.SkinOffset,
-									AltInverseBindMatrix = jointInfo.AltInverseBindMatrix
-								};
-
-								if (!TryDecodeMatrixFromOSD(ibmOsd[i], out meshJoint.InverseBindMatrix))
-								{
-									// Logger.Log("Failed to decode inverse_bind_matrix matrix for joint " + jointInfo.Name, Helpers.LogLevel.Warning);
-								}
-
-								int skeletonIndex = skeletonManager.JointList.IndexOf(jointInfo);
-								if(!skeletonIndexToMeshIndex.ContainsKey(skeletonIndex))
-								{
-									meshJoints.Add(meshJoint);
-									skeletonIndexToMeshIndex[skeletonIndex] = meshJoints.Count - 1;
-								}
+								// Logger.Log("Failed to decode inverse_bind_matrix matrix for joint " + jointInfo.Name, Helpers.LogLevel.Warning);
 							}
-							else
-							{
-								// Logger.Log("Could not find joint in skeleton: " + jointName, Helpers.LogLevel.Warning);
-							}
+							mesh.Joints[i] = jointInfo;
 						}
-
-						// Now that the mesh-specific joint list is built, remap the parent indices
-						foreach(var joint in meshJoints)
-						{
-							if(joint.Parent != -1 && skeletonIndexToMeshIndex.ContainsKey(joint.Parent))
-							{
-								joint.Parent = skeletonIndexToMeshIndex[joint.Parent];
-							}
-							else
-							{
-								joint.Parent = -1; // Root of this mesh's skeleton
-							}
-						}
-
-						mesh.Joints = meshJoints.ToArray();
 					}
 
 					if (skinMap["alt_inverse_bind_matrix"] is OSDArray aibmOsd)

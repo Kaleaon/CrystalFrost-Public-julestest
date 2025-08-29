@@ -11,6 +11,7 @@ public class SnapshotPanel : MonoBehaviour
     public Toggle InterfaceToggle;
     public Toggle LBalanceToggle;
     public Toggle HUDsToggle;
+    public Toggle AutoRefreshToggle;
     public GameObject[] mainUIElements;
     public GameObject[] hudElements;
     public GameObject lBalanceElement;
@@ -21,6 +22,20 @@ public class SnapshotPanel : MonoBehaviour
 
     private Texture2D lastSnapshot;
     private Canvas canvas;
+    private Vector3 lastCameraPosition;
+    private Quaternion lastCameraRotation;
+
+    void OnEnable()
+    {
+        Time.timeScale = 0.0f;
+        lastCameraPosition = Camera.main.transform.position;
+        lastCameraRotation = Camera.main.transform.rotation;
+    }
+
+    void OnDisable()
+    {
+        Time.timeScale = 1.0f;
+    }
 
     void Start()
     {
@@ -41,6 +56,19 @@ public class SnapshotPanel : MonoBehaviour
 
         // Initial snapshot
         TakeSnapshot();
+    }
+
+    void Update()
+    {
+        if (AutoRefreshToggle != null && AutoRefreshToggle.isOn)
+        {
+            if (Camera.main.transform.position != lastCameraPosition || Camera.main.transform.rotation != lastCameraRotation)
+            {
+                TakeSnapshot();
+                lastCameraPosition = Camera.main.transform.position;
+                lastCameraRotation = Camera.main.transform.rotation;
+            }
+        }
     }
 
     public void TakeSnapshot()
@@ -163,5 +191,10 @@ public class SnapshotPanel : MonoBehaviour
             if (StatusText != null) StatusText.text = "No snapshot to save.";
             Debug.LogWarning("No snapshot to save.");
         }
+    }
+
+    public void ClosePanel()
+    {
+        gameObject.SetActive(false);
     }
 }

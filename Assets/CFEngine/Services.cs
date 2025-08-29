@@ -206,7 +206,6 @@ namespace CrystalFrost
 			_serviceCollection.AddSingleton<IGlobalExceptionHandler, GlobalExceptionHandler>();
 
 			// world state stuff
-			_serviceCollection.AddSingleton<CrystalFrost.WorldState.ISkeletonManager, CrystalFrost.WorldState.SkeletonManager>();
 			_serviceCollection.AddSingleton<IHandleTerseUpdate, HandleTerseUpdate>();
 			_serviceCollection.AddSingleton<IHandleObjectUpdate, HandleObjectUpdate>();
 			_serviceCollection.AddSingleton<IHandleObjectBlockDataUpdate, HandleObjectBlockDataUpdate>();

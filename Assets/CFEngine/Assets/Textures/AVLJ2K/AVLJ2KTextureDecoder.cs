@@ -34,94 +34,94 @@ namespace CrystalFrost.Assets.Textures.AVLJ2K
 			_tgaReader = tgaReader;
 		}
 
-		private static readonly byte[] FallbackTextureData = new byte[] {
-			127, 0, 127, 255, 0, 0, 0, 255,
-			0, 0, 0, 255, 127, 0, 127, 255
-		};
-
 		public Task<DecodedTexture> Decode(AssetTexture texture)
 		{
 			return Perf.Measure("AVLJ2KTextureDecoder.Decode",
-				() => Task.FromResult(DecodeInternal(texture)));
+				() => Task.FromResult(DecodeOpenJ2K(texture)));
 		}
 
-		private DecodedTexture CreateFallbackTexture(UUID assetId)
-		{
-			return new DecodedTexture()
-			{
-				UUID = assetId,
-				Data = FallbackTextureData,
-				Width = 2,
-				Height = 2,
-				Components = 4
-			};
-		}
-
-		private DecodedTexture DecodeInternal(AssetTexture texture)
+		private DecodedTexture DecodeOpenJ2K(AssetTexture texture)
 		{
 			if (texture.AssetData == null || texture.AssetData.Length == 0)
 			{
-				_log.LogWarning("Texture has no data {AssetID}", texture.AssetID);
-				return CreateFallbackTexture(texture.AssetID);
+				_log.LogWarning("Texture has no data " + texture.AssetID);
 			}
 
-			GCHandle pinnedInHandle = default;
-			GCHandle pinnedOutHandle = default;
 
 			try
 			{
-				pinnedInHandle = GCHandle.Alloc(texture.AssetData, GCHandleType.Pinned);
-				IntPtr inPtr = pinnedInHandle.AddrOfPinnedObject();
-				var width = AVL_j2k_width(inPtr, texture.AssetData.Length);
-				var height = AVL_j2k_height(inPtr, texture.AssetData.Length);
-				var channels = AVL_j2k_channels(inPtr, texture.AssetData.Length);
+				GCHandle pinnedArray = GCHandle.Alloc(texture.AssetData, GCHandleType.Pinned);
+				IntPtr pointer = pinnedArray.AddrOfPinnedObject();
+				var width = AVL_j2k_width(pointer, texture.AssetData.Length);
+				var height = AVL_j2k_height(pointer, texture.AssetData.Length);
+				var channels = AVL_j2k_channels(pointer, texture.AssetData.Length);
 
-				if (width <= 0 || height <= 0)
+				if (width <= 0 || height <= 0 || channels <= 0)
 				{
-					_log.LogError("Failed to decode texture header {AssetID}", texture.AssetID);
-					return CreateFallbackTexture(texture.AssetID);
+					_log.LogError($"Failed to decode texture {texture.AssetID}");
+					pinnedArray.Free();
+					return new DecodedTexture()
+					{
+						UUID = texture.AssetID,
+						Data = new byte[] { 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
+											127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
+											127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
+											127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127},
+						Width = 1,
+						Height = 1,
+						Components = 3
+					};
 				}
+
+				// allocate a buffer for the decoded texture
+				var decodedTexture = new byte[width * height * channels];
+				GCHandle pinnedArray2 = GCHandle.Alloc(decodedTexture, GCHandleType.Pinned);
+				IntPtr pointer2 = pinnedArray2.AddrOfPinnedObject();
+				if (!AVL_j2k_decode(pointer, texture.AssetData.Length, pointer2))
+				{
+					_log.LogError($"Failed to decode texture {texture.AssetID}");
+					pinnedArray.Free();
+					pinnedArray2.Free();
+					throw new TextureDecodeException("Failed to decode texture");
+				}
+				pinnedArray2.Free();
+				pinnedArray.Free();
+				// _log.LogInformation($"Decoding texture {texture.AssetID} {width}x{height} {channels} channels");
+
+
+				var decoded = new DecodedTexture();
+				//decoded.RawData = texture.AssetData;
+				decoded.Data = decodedTexture;
+				decoded.Width = width;
+				decoded.Height = height;
+				decoded.Components = channels;
+				decoded.UUID = texture.AssetID;
 
 				if (channels != 3 && channels != 4)
 				{
-					_log.LogWarning("Unsupported number of channels ({Channels}) in texture {AssetID}", channels, texture.AssetID);
-					return CreateFallbackTexture(texture.AssetID);
+					// TODO, Fallback texture should come from a unfied place
+					// so that it doesn't result in the creation of a new TextureTD, or Material.
+					// and all objects using the fallback can use a single instance of a shared
+					// texture & material.
+					return new DecodedTexture()
+					{
+						UUID = texture.AssetID,
+						Data = new byte[] { 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
+											127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
+											127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
+											127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127},
+						Width = 1,
+						Height = 1,
+						Components = 3
+					};
 				}
 
-				var decodedTexture = new byte[width * height * channels];
-				pinnedOutHandle = GCHandle.Alloc(decodedTexture, GCHandleType.Pinned);
-				IntPtr outPtr = pinnedOutHandle.AddrOfPinnedObject();
-
-				if (!AVL_j2k_decode(inPtr, texture.AssetData.Length, outPtr))
-				{
-					_log.LogError("Failed to decode texture data {AssetID}", texture.AssetID);
-					return CreateFallbackTexture(texture.AssetID);
-				}
-
-				return new DecodedTexture
-				{
-					Data = decodedTexture,
-					Width = width,
-					Height = height,
-					Components = channels,
-					UUID = texture.AssetID
-				};
+				return decoded;
 			}
 			catch (Exception ex)
 			{
-				_log.LogError(ex, "Texture decode error on {AssetID}", texture.AssetID);
-				return CreateFallbackTexture(texture.AssetID);
-			}
-			finally
-			{
-				if (pinnedInHandle.IsAllocated)
-				{
-					pinnedInHandle.Free();
-				}
-				if (pinnedOutHandle.IsAllocated)
-				{
-					pinnedOutHandle.Free();
-				}
+				_log.LogError("Texture decode error: " + ex.Message);
+				throw new TextureDecodeException("There was a problem decoding a texture.", ex);
 			}
 		}
 	}

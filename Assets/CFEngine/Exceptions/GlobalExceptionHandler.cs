@@ -1,5 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using System;
+using UnityEngine;
 
 namespace CrystalFrost.Exceptions
 {
@@ -19,25 +20,30 @@ namespace CrystalFrost.Exceptions
 
         public void Initialize()
         {
-            AppDomain.CurrentDomain.FirstChanceException += FirstChanceException;
-            AppDomain.CurrentDomain.UnhandledException += UnhandledException;
-            AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit; // this might require security permissions
+            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            Application.logMessageReceivedThreaded += OnUnityLogMessageReceived;
         }
 
-        private void CurrentDomain_ProcessExit(object sender, EventArgs e)
+        private void OnUnityLogMessageReceived(string condition, string stackTrace, LogType type)
         {
-            _log.LogInformation("ProcessExit");
+            if (type == LogType.Exception)
+            {
+                // Note: The 'condition' string often contains the exception type and message.
+                // The 'stackTrace' is separate. We combine them for a comprehensive log.
+                _log.LogError("Unhandled Unity Exception:\nCondition: {Condition}\nStackTrace: {StackTrace}", condition, stackTrace);
+            }
         }
 
-        private void UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
-            var ex = (Exception)e.ExceptionObject;
-            _log.LogError("Unhandled Exception: " + ex.ToString());
-        }
-
-        private void FirstChanceException(object sender, System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs e)
-        {
-            _log.LogWarning("First Chance Exception: " + e.Exception.ToString());
+            if (e.ExceptionObject is Exception ex)
+            {
+                _log.LogError(ex, "Unhandled AppDomain Exception");
+            }
+            else
+            {
+                _log.LogError("Unhandled AppDomain Exception with non-Exception object: {ExceptionObject}", e.ExceptionObject);
+            }
         }
     }
 }

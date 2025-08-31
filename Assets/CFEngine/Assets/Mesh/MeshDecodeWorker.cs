@@ -48,26 +48,17 @@ namespace CrystalFrost.Assets.Mesh
 
 		protected override Task<bool> DoWork()
 		{
-			if (_downloadedMeshQueue.Count == 0) return Task.FromResult(false);
-			if (!_downloadedMeshQueue.TryDequeue(out var request)) return Task.FromResult(true);
-			if (request?.AssetMesh is null)
-			{
-				// Request or its asset is null, nothing to decode.
-				return Task.FromResult(true);
-			}
+			return Task.Run(() => DoWorkImpl());
+		}
 
-			try
-			{
-				// decode something
-				_meshDecoder.Decode(request);
-			}
-			catch (Exception ex)
-			{
-				_log.LogError(ex, "Failed to decode mesh {MeshID}", request.UUID);
-				// Discarding the request. A failed queue could be implemented here.
-			}
-
-			return Task.FromResult(_downloadedMeshQueue.Count > 0);
+		private bool DoWorkImpl()
+		{
+			if (_downloadedMeshQueue.Count == 0) return false;
+			if (!_downloadedMeshQueue.TryDequeue(out var request)) return true;
+			if (request is null) return true;
+			// decode something
+			_meshDecoder.Decode(request);
+			return _downloadedMeshQueue.Count > 0;
 		}
 
 		protected override bool OutputIsBacklogged()

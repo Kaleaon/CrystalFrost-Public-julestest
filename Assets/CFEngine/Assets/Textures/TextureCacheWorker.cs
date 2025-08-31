@@ -33,18 +33,18 @@ namespace CrystalFrost
 
 
 		public TextureCacheWorker(
-			ILogger<IMeshCacheWorker> log,
+			ILogger<ITextureCacheWorker> log,
 			IProvideShutdownSignal runningIndicator,
-			IAesEncryptor aesMeshEncryptor,
+			IAesEncryptor aesEncryptor,
 			IReadyTextureQueue readyTextureQueue,
 			ITextureDownloadRequestQueue downloadRequestQueue,
-			ITextureRequestQueue meshRequestQueue,
+			ITextureRequestQueue textureRequestQueue,
 			IDecodedTextureCacheQueue decodedCache,
 			IOptions<TextureConfig> textureConfig)
 			: base("TextureCache", 1, log, runningIndicator)
 		{
 			_textureConfig = textureConfig.Value;
-			_encryptor = aesMeshEncryptor;
+			_encryptor = aesEncryptor;
 			_cachePath = _textureConfig.getCachePath();
 			_isCachingAllowed = _textureConfig.isCachingAllowed;
 
@@ -54,58 +54,40 @@ namespace CrystalFrost
 			}
 
 			_readyTextureQueue = readyTextureQueue;
-			_textureRequestQueue = meshRequestQueue;
+			_textureRequestQueue = textureRequestQueue;
 			_downloadRequestQueue = downloadRequestQueue;
 			_decodedCacheQueue = decodedCache;
 
 			_textureRequestQueue.ItemEnqueued += WorkItemEnqueued;
 			_decodedCacheQueue.ItemEnqueued += WorkItemEnqueued;
-			_textureRequestQueue.ItemDequeued += WorkItemEnqueued;
-			_decodedCacheQueue.ItemDequeued += WorkItemEnqueued;
 		}
-
 
 		private void WorkItemEnqueued(DecodedTexture obj)
 		{
 			CheckForWork();
 		}
 
-
 		private void WorkItemEnqueued(UUID obj)
 		{
 			CheckForWork();
 		}
 
-
 		protected override Task<bool> DoWork()
 		{
+			bool resultLoad;
+			bool resultSave;
 			if (!_isCachingAllowed)
 			{
-				return Task.Run(() =>
-				{
-					// Just pass through the mesh requests through queues
-					bool resultLoad = DoWorkImplPassThroughLoad(); // Request Queue -> Download Request Queue (skip cache)
-					bool resultSave = DoWorkImplPassThroughSave(); // Downloaded Cache Queue -> Downloaded Texture Queue (skip cache)
-					return resultLoad || resultSave;
-				});
+				// Just pass through the requests through queues
+				resultLoad = DoWorkImplPassThroughLoad();
+				resultSave = DoWorkImplPassThroughSave();
 			}
 			else
 			{
-				return Task.Run(() =>
-				{
-					bool resultLoad = false;
-					try
-					{
-						resultLoad = DoWorkImplLoadCache(); // Request Queue -> (cache check) (A - cache exists) -> Downloaded Texture Queue (skip download) (B - cache miss) -> Download Request Queue
-					}
-					catch (Exception e)
-					{
-						_log.LogError("Error in DoWorkImplLoadCache :" + e.ToString());
-					}
-					bool resultSave = DoWorkImplSaveCache(); // Downloaded Cache Queue -> (cache save) -> Downloaded Texture Queue
-					return resultLoad || resultSave;
-				});
+				resultLoad = DoWorkImplLoadCache();
+				resultSave = DoWorkImplSaveCache();
 			}
+			return Task.FromResult(resultLoad || resultSave);
 		}
 
 		private bool DoWorkImplPassThroughLoad()
@@ -169,24 +151,31 @@ namespace CrystalFrost
 			if (_textureRequestQueue.Count == 0) return false;
 			if (!_textureRequestQueue.TryDequeue(out var request)) return true;
 			if (request == null) return true;
-			var cachePath = Path.Combine(_cachePath, request.ToString() + ".asset");
 
-			if (!File.Exists(cachePath)) // mesh is not cached, pass it to download queue
+			try
 			{
-				_downloadRequestQueue.Enqueue(request);
-			}
-			else // load cached mesh
-			{
-				using (var stream = File.OpenRead(cachePath))
+				var cachePath = Path.Combine(_cachePath, request.ToString() + ".asset");
+				if (!File.Exists(cachePath)) // texture is not cached, pass it to download queue
 				{
-					var encryptedData = new byte[stream.Length];
-					stream.Read(encryptedData, 0, encryptedData.Length);
-					var decryptedData = _encryptor.Decrypt(encryptedData);
-					// var asset = new AssetTexture(request, decryptedData);
-					//_downloadedTextureQueue.Enqueue(asset);
-					var texture = DeserializeDecodedTexture(decryptedData);
-					_readyTextureQueue.Enqueue(texture);
+					_downloadRequestQueue.Enqueue(request);
 				}
+				else // load cached texture
+				{
+					using (var stream = File.OpenRead(cachePath))
+					{
+						var encryptedData = new byte[stream.Length];
+						stream.Read(encryptedData, 0, encryptedData.Length);
+						var decryptedData = _encryptor.Decrypt(encryptedData);
+						var texture = DeserializeDecodedTexture(decryptedData);
+						_readyTextureQueue.Enqueue(texture);
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				_log.LogError(ex, "Error loading texture {TextureID} from cache. Treating as cache miss.", request);
+				// Treat as a cache miss
+				_downloadRequestQueue.Enqueue(request);
 			}
 			return _textureRequestQueue.Count > 0;
 		}
@@ -197,19 +186,25 @@ namespace CrystalFrost
 			if (!_decodedCacheQueue.TryDequeue(out var request)) return true;
 			if (request == null) return true;
 
-			_readyTextureQueue.Enqueue(request);
-
-			// var cachePath = Path.Combine(_cachePath, request.AssetID.ToString() + ".asset");
-			var cachePath = Path.Combine(_cachePath, request.UUID.ToString() + ".asset");
-			if (!File.Exists(cachePath))
+			try
 			{
-				using (var stream = File.Create(cachePath))
+				var cachePath = Path.Combine(_cachePath, request.UUID.ToString() + ".asset");
+				if (!File.Exists(cachePath))
 				{
-					var encryptedData = _encryptor.Encrypt(SerializeDecodedTexture(request));
-					stream.Write(encryptedData, 0, encryptedData.Length);
+					using (var stream = File.Create(cachePath))
+					{
+						var encryptedData = _encryptor.Encrypt(SerializeDecodedTexture(request));
+						stream.Write(encryptedData, 0, encryptedData.Length);
+					}
 				}
 			}
-			// _downloadedTextureQueue.Enqueue(request);
+			catch (Exception ex)
+			{
+				_log.LogError(ex, "Error saving texture {TextureID} to cache. Skipping cache save.", request.UUID);
+				// Continue without caching, but still pass the texture on.
+			}
+
+			_readyTextureQueue.Enqueue(request);
 			return _decodedCacheQueue.Count > 0;
 		}
 

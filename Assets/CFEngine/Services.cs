@@ -86,9 +86,9 @@ namespace CrystalFrost
             Services._configRoot = new ConfigurationBuilder()
                 // Logging config is handled as the Logging subsection of the main config.
                 .AddInMemoryCollection(LoggingConfig.DefaultValues)
-                .AddJsonFile("cf-config.json", optional: true, reloadOnChange: true)
-                .AddEnvironmentVariables("CF_")
-                .AddCommandLine(Environment.GetCommandLineArgs())
+                // .AddJsonFile("cf-config.json", optional: true, reloadOnChange: true)
+                // .AddEnvironmentVariables("CF_")
+                // .AddCommandLine(Environment.GetCommandLineArgs())
                 .Build();
 
             // UnityEngine.Debug.Log(Services._configRoot.GetDebugView()); // For debugging configuration

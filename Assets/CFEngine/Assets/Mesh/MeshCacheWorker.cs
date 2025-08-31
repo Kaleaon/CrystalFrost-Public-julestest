@@ -55,9 +55,6 @@ namespace CrystalFrost.Assets.Mesh
 
 			_meshRequestQueue.ItemEnqueued += WorkItemEnqueued;
 			_downloadedCacheQueue.ItemEnqueued += WorkItemEnqueued;
-			_meshRequestQueue.ItemDequeued += WorkItemEnqueued;
-			_downloadedCacheQueue.ItemDequeued += WorkItemEnqueued;
-
 		}
 
 		private void WorkItemEnqueued(MeshRequest obj)
@@ -67,25 +64,20 @@ namespace CrystalFrost.Assets.Mesh
 
 		protected override Task<bool> DoWork()
 		{
+			bool resultLoad;
+			bool resultSave;
 			if (!_isCachingAllowed)
 			{
-				return Task.Run(() =>
-					{
-						// Just pass through the mesh requests through queues
-						bool resultLoad = DoWorkImplPassThroughLoad(); // Request Queue -> Download Request Queue (skip cache)
-						bool resultSave = DoWorkImplPassThroughSave(); // Downloaded Cache Queue -> Downloaded Mesh Queue (skip cache)
-						return resultLoad || resultSave;
-					});
+				// Just pass through the mesh requests through queues
+				resultLoad = DoWorkImplPassThroughLoad(); // Request Queue -> Download Request Queue (skip cache)
+				resultSave = DoWorkImplPassThroughSave(); // Downloaded Cache Queue -> Downloaded Mesh Queue (skip cache)
 			}
 			else
 			{
-				return Task.Run(() =>
-				{
-					bool resultLoad = DoWorkImplLoadCache(); // Request Queue -> (cache check) (A - cache exists) -> Downloaded Mesh Queue (skip download) (B - cache miss) -> Download Request Queue
-					bool resultSave = DoWorkImplSaveCache(); // Downloaded Cache Queue -> (cache save) -> Downloaded Mesh Queue
-					return resultLoad || resultSave;
-				});
+				resultLoad = DoWorkImplLoadCache(); // Request Queue -> (cache check) (A - cache exists) -> Downloaded Mesh Queue (skip download) (B - cache miss) -> Download Request Queue
+				resultSave = DoWorkImplSaveCache(); // Downloaded Cache Queue -> (cache save) -> Downloaded Mesh Queue
 			}
+			return Task.FromResult(resultLoad || resultSave);
 		}
 
 		private bool DoWorkImplPassThroughLoad()
@@ -112,20 +104,29 @@ namespace CrystalFrost.Assets.Mesh
 			if (!_meshRequestQueue.TryDequeue(out var request)) { return true; }
 			if (request == null) return true;
 			var cachePath = Path.Combine(_cachePath, request.UUID.ToString() + ".asset");
-			if (!File.Exists(cachePath)) // mesh is not cached, pass it to download queue
+			try
 			{
-				_downloadRequestQueue.Enqueue(request);
-			}
-			else // load cached mesh
-			{
-				using (var stream = File.OpenRead(cachePath))
+				if (!File.Exists(cachePath)) // mesh is not cached, pass it to download queue
 				{
-					var encryptedData = new byte[stream.Length];
-					stream.Read(encryptedData, 0, encryptedData.Length);
-					var decryptedData = _encryptor.Decrypt(encryptedData);
-					request.AssetMesh = new AssetMesh(request.UUID, decryptedData);
-					_downloadedMeshQueue.Enqueue(request);
+					_downloadRequestQueue.Enqueue(request);
 				}
+				else // load cached mesh
+				{
+					using (var stream = File.OpenRead(cachePath))
+					{
+						var encryptedData = new byte[stream.Length];
+						stream.Read(encryptedData, 0, encryptedData.Length);
+						var decryptedData = _encryptor.Decrypt(encryptedData);
+						request.AssetMesh = new AssetMesh(request.UUID, decryptedData);
+						_downloadedMeshQueue.Enqueue(request);
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				_log.LogError(ex, "Error loading mesh {MeshID} from cache. Treating as cache miss.", request.UUID);
+				// Treat as a cache miss
+				_downloadRequestQueue.Enqueue(request);
 			}
 			return _meshRequestQueue.Count > 0;
 		}
@@ -135,15 +136,25 @@ namespace CrystalFrost.Assets.Mesh
 			if (_downloadedCacheQueue.Count == 0) return false;
 			if (!_downloadedCacheQueue.TryDequeue(out var request)) return true;
 			if (request == null) return true;
-			var cachePath = Path.Combine(_cachePath, request.UUID.ToString() + ".asset");
-			if (!File.Exists(cachePath))
+
+			try
 			{
-				using (var stream = File.Create(cachePath))
+				var cachePath = Path.Combine(_cachePath, request.UUID.ToString() + ".asset");
+				if (!File.Exists(cachePath))
 				{
-					var encryptedData = _encryptor.Encrypt(request.AssetMesh.AssetData);
-					stream.Write(encryptedData, 0, encryptedData.Length);
+					using (var stream = File.Create(cachePath))
+					{
+						var encryptedData = _encryptor.Encrypt(request.AssetMesh.AssetData);
+						stream.Write(encryptedData, 0, encryptedData.Length);
+					}
 				}
 			}
+			catch (Exception ex)
+			{
+				_log.LogError(ex, "Error saving mesh {MeshID} to cache. Skipping cache save.", request.UUID);
+				// Continue without caching
+			}
+
 			_downloadedMeshQueue.Enqueue(request);
 			return _downloadedCacheQueue.Count > 0;
 		}

@@ -35,23 +35,13 @@ namespace CrystalFrost
         public event Action OnDisable;
         public event Action OnDestroy;
 
-        private static void DoInBackground(Action action)
-        {
-            // capture the current event handler
-            // in case it changes on another thread
-            // while we are using it.
-            var a = action;
-            if (a is null) return;
-            _ = Task.Run(() => a?.Invoke());
-        }
-
-        public void DoAwake() => DoInBackground(Awake);
-        public void DoOnDestroy() => DoInBackground(OnDestroy);
-        public void DoOnDisable() => DoInBackground(OnDisable);
-        public void DoOnEnable() => DoInBackground(OnEnable);
-        public void DoFixedUpdate() => DoInBackground(FixedUpdate);
-        public void DoLateUpdate() => DoInBackground(LateUpdate);
-        public void DoStart() => DoInBackground(Start);
-        public void DoUpdate() => DoInBackground(Update);
+        public void DoAwake() => Awake?.Invoke();
+        public void DoOnDestroy() => OnDestroy?.Invoke();
+        public void DoOnDisable() => OnDisable?.Invoke();
+        public void DoOnEnable() => OnEnable?.Invoke();
+        public void DoFixedUpdate() => FixedUpdate?.Invoke();
+        public void DoLateUpdate() => LateUpdate?.Invoke();
+        public void DoStart() => Start?.Invoke();
+        public void DoUpdate() => Update?.Invoke();
     }
 }

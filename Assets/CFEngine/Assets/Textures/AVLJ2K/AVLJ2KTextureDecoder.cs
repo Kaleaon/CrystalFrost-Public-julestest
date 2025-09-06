@@ -101,7 +101,7 @@ namespace CrystalFrost.Assets.Textures.AVLJ2K
 				{
 					// TODO, Fallback texture should come from a unfied place
 					// so that it doesn't result in the creation of a new TextureTD, or Material.
-					// and all objects using the fallback can use a single instance of a shared 
+					// and all objects using the fallback can use a single instance of a shared
 					// texture & material.
 					return new DecodedTexture()
 					{

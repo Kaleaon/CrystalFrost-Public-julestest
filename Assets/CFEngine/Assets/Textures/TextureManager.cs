@@ -29,9 +29,6 @@ namespace CrystalFrost.Assets
 		private readonly ITextureDownloadWorker _downloadWorker;
 		private readonly ITextureCacheWorker _textureCache;
 
-
-		private readonly List<UUID> _pending = new();
-
 		public TextureManager(
 			ILogger<TextureManager> log,
 			IReadyTextureQueue readyTextureQueue,
@@ -45,22 +42,10 @@ namespace CrystalFrost.Assets
 			_textureCache = textureCache;
 			ReadyTextures = readyTextureQueue;
 
-			// we don't really use these directly, but we
-			// want them to exist so that they will subscribed to queue
-			// events and do things when things are enqueud.
+			// We don't really use these directly, but we need to instantiate them
+			// so that they will subscribe to queue events and process them.
 			_decodeWorker = decodeWorker;
 			_downloadWorker = downloadWorker;
-
-			ReadyTextures.ItemDequeued += ReadyTextures_ItemDequeued;
-		}
-
-		private void ReadyTextures_ItemDequeued(DecodedTexture decoded)
-		{
-			lock (_pending)
-			{
-				_pending.Remove(decoded.UUID);
-			}
-			_log.PendingTextureRemoved(decoded.UUID);
 		}
 
 		public void RequestImage(UUID uuid)

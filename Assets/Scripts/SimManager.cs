@@ -616,9 +616,6 @@ public class SimManager : MonoBehaviour
 		var sunPhase = ClientManager.client?.Grid?.SunPhase ?? 0f;
 #if USE_FUNLY_SKY
         timeOfDayController.skyTime = Mathf.Repeat((sunPhase * 0.15915494309189533576888376337251f) + 0.25f, 1f);
-#else
-		// TODO - Generic Sun Movement
-		//sun.transform.forward = ClientManager.client.Grid.SunDirection.ToVector3();
 #endif
 
 		//TranslateObjects(t);

@@ -19,7 +19,7 @@ namespace CrystalFrost.Assets.Textures
 		private readonly GridClient _client;
 		private readonly IDownloadedTextureQueue _downloaded;
 		private readonly ITextureDownloadRequestQueue _requests;
-		private readonly List<UUID> _pendingDownloads = new();
+		private readonly System.Collections.Concurrent.ConcurrentDictionary<UUID, UUID> _pendingDownloads = new();
 
 		public TextureDownloadWorker(
 			ILogger<TextureDownloadWorker> log,
@@ -33,49 +33,52 @@ namespace CrystalFrost.Assets.Textures
 			_textureConfig = textureConfig.Value;
 			_client = client;
 			_downloaded = downloadedTextureQueue;
-			_downloaded.ItemDequeued += Downloaded_ItemDequeued;
 			_requests = downloadRequestQueue;
-			_requests.ItemEnqueued += Requests_ItemEnqueued;
+			_requests.ItemEnqueued += OnItemEnqueued;
+		}
+
+		private void OnItemEnqueued(UUID obj)
+		{
+			CheckForWork();
 		}
 
 		public override void Dispose()
 		{
-			_downloaded.ItemDequeued -= Downloaded_ItemDequeued;
-			_requests.ItemEnqueued -= Requests_ItemEnqueued;
+			_requests.ItemEnqueued -= OnItemEnqueued;
 			base.Dispose();
 		}
 
-		private void Requests_ItemEnqueued(UUID obj)
-		{
-			CheckForWork();
-		}
-
-		private void Downloaded_ItemDequeued(AssetTexture obj)
-		{
-			CheckForWork();
-		}
-
-		protected override Task<bool> DoWork()
-		{
-			return Task.Run(DoWorkImpl);
-		}
-
-		private bool DoWorkImpl()
+		protected override async Task<bool> DoWork()
 		{
 			if (_requests.Count == 0) return false;
-
-			if (!_requests.TryDequeue(out var request)) return true;
-
-			//if (request == UUID.Zero) return true;
-
-			if (request == UUID.Zero)
+			if (!_requests.TryDequeue(out var requestID)) return true;
+			if (requestID == UUID.Zero)
 			{
 				_log.LogError("Texture request UUID is zero");
 				return true;
 			}
 
-			_pendingDownloads.Add(request);
-			_client.Assets.RequestImage(request, TextureDownloaded);
+			var tcs = new TaskCompletionSource<(TextureRequestState state, AssetTexture assetTexture)>();
+
+			_pendingDownloads.TryAdd(requestID, requestID);
+
+			_client.Assets.RequestImage(requestID, (state, assetTexture) => {
+				tcs.TrySetResult((state, assetTexture));
+			});
+
+			var result = await tcs.Task;
+
+			_pendingDownloads.TryRemove(requestID, out _);
+
+			if (result.state == TextureRequestState.Finished && result.assetTexture != null)
+			{
+				_downloaded.Enqueue(result.assetTexture);
+			}
+			else
+			{
+				_log.LogWarning("Texture download failed for {TextureID} with status {Status}", requestID, result.state);
+				// Request is dropped. A retry or failed queue could be implemented here.
+			}
 
 			return _requests.Count > 0;
 		}
@@ -83,21 +86,6 @@ namespace CrystalFrost.Assets.Textures
 		protected override bool OutputIsBacklogged()
 		{
 			return _downloaded.Count > _textureConfig.MaxDownloadedTextures;
-		}
-
-		private void TextureDownloaded(TextureRequestState state, AssetTexture assetTexture)
-		{
-			_log.LogDebug("Texture Downloaded " + assetTexture.AssetID);
-			if (state == TextureRequestState.Finished)
-			{
-				_pendingDownloads.Remove(assetTexture.AssetID);
-				_downloaded.Enqueue(assetTexture);
-				CheckForWork();
-				return;
-			}
-
-			// are there other statuses we care about? Probably.
-			// problem for the future
 		}
 
 		protected override void ShuttingDown()
@@ -108,7 +96,7 @@ namespace CrystalFrost.Assets.Textures
 
 		private void CancelPendingDownloads()
 		{
-			foreach (var uuid in _pendingDownloads)
+			foreach (var uuid in _pendingDownloads.Keys)
 			{
 				_client.Assets.RequestImageCancel(uuid);
 			}

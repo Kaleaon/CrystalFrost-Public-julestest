@@ -137,7 +137,7 @@ public class Login : MonoBehaviour
 		//ClientManager.client.Self.Movement.Camera.
 		ClientManager.client.Settings.AVATAR_TRACKING = true;
 		//loginUI.SetActive(true);
-		//ClientManager.texturePipeline = new TexturePipeline(ClientManager.client);
+		ClientManager.texturePipeline = new TexturePipeline(ClientManager.client);
 		ClientManager.assetManager = new CrystalFrost.CFAssetManager();
 
 		//ClientManager.client.Settings

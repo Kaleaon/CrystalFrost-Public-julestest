@@ -40,6 +40,7 @@ public class Chat : MonoBehaviour
         public UUID uuid;
         public string log;
         public GameObject tabButton;
+        public bool isGroupChat = false;
     }
 
 
@@ -51,11 +52,13 @@ public class Chat : MonoBehaviour
 
     public ConcurrentDictionary<UUID, ChatTab> tabs = new();
     public ConcurrentQueue<InstantMessageEventArgs> imEvents = new();
+    public ConcurrentQueue<GroupChatEventArgs> groupChatEvents = new();
 
     void Start()
     {
 		ClientManager.client.Self.IM += new EventHandler<InstantMessageEventArgs>(IncomingIM);
 		ClientManager.client.Self.ChatFromSimulator += new EventHandler<ChatEventArgs>(ChatFromSimulator);
+        ClientManager.client.Self.OnGroupChat += new EventHandler<GroupChatEventArgs>(GroupChat);
 
 		tabs.TryAdd(UUID.Zero, new ChatTab() { log = string.Empty, name = "Local Chat", tabButton = nearbyButton, uuid = UUID.Zero});
 
@@ -78,6 +81,37 @@ public class Chat : MonoBehaviour
     {
 		//Debug.Log($"Incoming IM from: {e.IM.FromAgentName}: {e.IM.Message}");
         imEvents.Enqueue(e);
+    }
+
+    void GroupChat(object sender, GroupChatEventArgs e)
+    {
+        groupChatEvents.Enqueue(e);
+    }
+
+    void ParseGroupChatEvents()
+    {
+        string chat;
+        while (groupChatEvents.Count > 0)
+        {
+            if (groupChatEvents.TryDequeue(out var e))
+            {
+                chat = ($"[{System.DateTime.UtcNow.ToShortTimeString()}] {e.FromName}: {e.Message}").Replace("<", "<\u200B");
+                if (tabs.ContainsKey(e.ChatSessionID))
+                {
+                    tabs[e.ChatSessionID].log += "\n" + chat;
+                }
+                else
+                {
+                    // This should not happen if we join the group chat session first
+                    Debug.LogWarning($"Received group chat message for session {e.ChatSessionID} but not in that session.");
+                }
+
+                if (selectedChat == e.ChatSessionID)
+                {
+                    log.text = tabs[e.ChatSessionID].log;
+                }
+            }
+        }
     }
 
 	public void SetKeyToName(UUID uuid, string name)
@@ -170,12 +204,11 @@ public class Chat : MonoBehaviour
 		}
 	}
 
-	public void StartIM(UUID agentID)
+	public void StartIM(UUID agentID, string name)
 	{
 		Debug.Log("New IM session");
 		GameObject b = Instantiate(nearbyButton, nearbyButton.transform.parent, true);
-		string name = "Loading...";
-		if(avatarNames.ContainsKey(agentID))name = avatarNames[agentID];
+		if(name == "Unknown" && avatarNames.ContainsKey(agentID))name = avatarNames[agentID];
 		ChatTab chatTab = new()
 		{
 			name = name,
@@ -231,9 +264,50 @@ public class Chat : MonoBehaviour
 		else
 		{
 			Debug.Log("Starting new IM");
-			StartIM(uuid);
+			StartIM(uuid, "Unknown");
 		}
 	}
+
+    public void JoinGroupChat(UUID groupID)
+    {
+        if (!tabs.ContainsKey(groupID))
+        {
+            ClientManager.client.Self.RequestJoinGroupChat(groupID);
+            string groupName = "Unknown Group";
+            if (ClientManager.Groups.TryGetValue(groupID, out var group))
+            {
+                groupName = group.Name;
+            }
+            StartGroupChat(groupID, groupName);
+        }
+        SwitchTab(groupID);
+    }
+
+    public void StartGroupChat(UUID groupID, string name)
+    {
+        if (tabs.ContainsKey(groupID)) return;
+
+        GameObject b = Instantiate(nearbyButton, nearbyButton.transform.parent, true);
+        ChatTab chatTab = new()
+        {
+            name = name,
+            uuid = groupID,
+            log = string.Empty,
+            tabButton = b,
+            isGroupChat = true
+        };
+
+        RectTransform rect = b.GetComponent<RectTransform>();
+        Vector2 anchoredPos = rect.anchoredPosition;
+        anchoredPos.y -= 30f * tabs.Count;
+        rect.anchoredPosition = anchoredPos;
+
+        UI_IMButton button = chatTab.tabButton.GetComponent<UI_IMButton>();
+        button.buttonText.text = chatTab.name;
+        button.uuid = chatTab.uuid;
+
+        tabs.TryAdd(groupID, chatTab);
+    }
 
 	// Update is called once per frame
 	float lastEnterUp = 0f;
@@ -241,6 +315,7 @@ public class Chat : MonoBehaviour
     {
         ParseIMEvents();
 		ParseChatEvents();
+        ParseGroupChatEvents();
 
 		lastEnterUp += Time.deltaTime;
 
@@ -287,7 +362,14 @@ public class Chat : MonoBehaviour
 		}
 		else
 		{
-			ClientManager.client.Self.InstantMessage(selectedChat, inputText.text);
+            if (tabs[selectedChat].isGroupChat)
+            {
+			    ClientManager.client.Self.SendGroupMessage(selectedChat, inputText.text);
+            }
+            else
+            {
+			    ClientManager.client.Self.InstantMessage(selectedChat, inputText.text);
+            }
 			tabs[selectedChat].log += "\n" + ($"[{System.DateTime.UtcNow.ToShortTimeString()}] {ClientManager.client.Self.Name}: {inputText.text}").Replace("<", "<\u200B");
 			log.text = tabs[selectedChat].log;
 			input.text = string.Empty;

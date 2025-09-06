@@ -14,6 +14,17 @@ public class ChatWindowUI : MonoBehaviour
     {
         ClientManager.chatWindow = this;
         contactsList = gameObject.GetComponent<ContactsList>();
+        ClientManager.client.Friends.OnFriendOnline += FriendOnline;
+        ClientManager.client.Friends.OnFriendOffline += FriendOffline;
+    }
+
+    void OnDestroy()
+    {
+        if (ClientManager.client != null && ClientManager.client.Network.Connected)
+        {
+            ClientManager.client.Friends.OnFriendOnline -= FriendOnline;
+            ClientManager.client.Friends.OnFriendOffline -= FriendOffline;
+        }
     }
 
     public TMPro.TMP_Text contactButtonText;
@@ -43,34 +54,25 @@ public class ChatWindowUI : MonoBehaviour
 
 	public void PopulateContacts()
     {
+        contactsList.Clear();
         ContactsList.ContactEntry contactEntry;
-        int counter = 0;
         List<UUID> avatarNames = new List<UUID>();
 		ClientManager.client.Friends.FriendList.ForEach(delegate (FriendInfo friend)
 		{
-            // append the name of the friend to our output
-            //Debug.Log($"Contact: {friend.Name} {friend.UUID}");
-            contactEntry = contactsList.AddContact(friend.Name, friend.UUID);
-
+            contactEntry = contactsList.AddContact(friend.Name, friend.UUID, friend.IsOnline);
             contactEntry.button.SetActive(true);
-            //contactsRectTransform.rect.height += 30f;
-            Rect rect = contactsRectTransform.rect;
-            Rect parentRect = contactsRectTransform.transform.parent.GetComponent<RectTransform>().rect;
             avatarNames.Add(friend.UUID);
-			//contactsRectTransform.
-
-			/*contactsRectTransform.localScale = new Vector3(1f, 1f, 1f);
-			contactsRectTransform.anchorMax = new Vector2(1f, 1f);
-			contactsRectTransform.anchorMin = new Vector2(0f, 0f);
-			contactsRectTransform.sizeDelta = new Vector2(0f, (parentRect.height + 30f));
-			contactsRectTransform.offsetMin = new Vector3(0f, 1f);
-		    contactsRectTransform.offsetMax = new Vector3(0f, -0f);*/
-
-			//contactsRectTransform.rect = rect;
 		});
 		ClientManager.client.Avatars.RequestAvatarNames(avatarNames);
-
-
 	}
 
+    void FriendOnline(object sender, FriendInfoEventArgs e)
+    {
+        contactsList.UpdateContactOnlineStatus(e.Friend.UUID, true);
+    }
+
+    void FriendOffline(object sender, FriendInfoEventArgs e)
+    {
+        contactsList.UpdateContactOnlineStatus(e.Friend.UUID, false);
+    }
 }

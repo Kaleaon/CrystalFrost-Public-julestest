@@ -273,7 +273,12 @@ public class Chat : MonoBehaviour
         if (!tabs.ContainsKey(groupID))
         {
             ClientManager.client.Self.RequestJoinGroupChat(groupID);
-            StartGroupChat(groupID, ClientManager.Groups[groupID].Name);
+            string groupName = "Unknown Group";
+            if (ClientManager.Groups.TryGetValue(groupID, out var group))
+            {
+                groupName = group.Name;
+            }
+            StartGroupChat(groupID, groupName);
         }
         SwitchTab(groupID);
     }

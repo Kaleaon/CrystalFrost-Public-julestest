@@ -74,8 +74,7 @@ namespace CrystalFrost
 
 		protected override Task<bool> DoWork()
 		{
-			bool resultLoad;
-			bool resultSave;
+			bool resultLoad, resultSave;
 			if (!_isCachingAllowed)
 			{
 				// Just pass through the requests through queues

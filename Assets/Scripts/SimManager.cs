@@ -681,14 +681,28 @@ public class SimManager : MonoBehaviour, IDisposable
 		{
 			try
 			{
-				if (scenePrims[localID].velocity != Vector3.zero || scenePrims[localID].omega != Vector3.zero)
+				if (scenePrims.TryGetValue(localID, out ScenePrimData primData))
 				{
-					scenePrims[localID].TranslateObject(t);
+					if (primData.velocity != Vector3.zero || primData.omega != Vector3.zero)
+					{
+						primData.TranslateObject(t);
+					}
 				}
 			}
-			catch
+			catch (ObjectDisposedException ex)
 			{
-				//deletedprims.Enqueue(localID);
+				_log.LogWarning($"Attempted to move disposed object {localID}: {ex.Message}");
+				// Object has been disposed, should be removed from moving objects list
+			}
+			catch (NullReferenceException ex)
+			{
+				_log.LogWarning($"Null reference when moving object {localID}: {ex.Message}");
+				// Object reference is null, skip this iteration
+			}
+			catch (Exception ex)
+			{
+				_log.LogError($"Unexpected error moving object {localID}: {ex.Message}\nStack trace: {ex.StackTrace}");
+				// Continue with other objects despite this error
 			}
 		}
 	}
@@ -997,9 +1011,25 @@ public class SimManager : MonoBehaviour, IDisposable
 						TextureFace(_pi.prim, _pi.face, _pi.GetComponent<Renderer>());
 						// unTexturedPrims.Remove(kvp.uuid);
 					}
-					catch (Exception e)
+					catch (NullReferenceException ex)
 					{
-						Debug.LogWarning(e);
+						_log.LogWarning($"Null reference when texturing face {_pi.face} of prim {_pi.prim?.LocalID}: {ex.Message}");
+						// Component or primitive reference is null, skip this face
+					}
+					catch (IndexOutOfRangeException ex)
+					{
+						_log.LogWarning($"Face index {_pi.face} out of range for prim {_pi.prim?.LocalID}: {ex.Message}");
+						// Invalid face index, skip this face
+					}
+					catch (ObjectDisposedException ex)
+					{
+						_log.LogWarning($"Attempted to texture disposed object {_pi.prim?.LocalID}: {ex.Message}");
+						// Object has been disposed, skip this face
+					}
+					catch (Exception ex)
+					{
+						_log.LogError($"Unexpected error texturing face {_pi.face} of prim {_pi.prim?.LocalID}: {ex.Message}\nStack trace: {ex.StackTrace}");
+						// Continue with other faces despite this error
 					}
 				}
 			}

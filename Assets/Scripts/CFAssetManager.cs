@@ -366,54 +366,154 @@ namespace CrystalFrost
 		//request sculpt texture from server
 		public void RequestSculpt(GameObject gameObject, Primitive prim)
 		{
-			SculptData sculptdata = new()
+			if (gameObject == null)
 			{
-				gameObject = gameObject,
-				prim = prim,
-			};
+				_log.LogError("RequestSculpt called with null gameObject");
+				return;
+			}
 
-			//store the gameObject and prim data for the object that requested the mesh
-			//so that it can be applied once the data is ready
-			requestedMeshes.TryAdd(prim.Sculpt.SculptTexture, new List<SculptData>());
-			requestedMeshes[prim.Sculpt.SculptTexture].Add(sculptdata);
-			ClientManager.client.Assets.RequestImage(prim.Sculpt.SculptTexture, CallbackSculptTexture);
+			if (prim == null)
+			{
+				_log.LogError("RequestSculpt called with null primitive");
+				return;
+			}
+
+			if (prim.Sculpt == null)
+			{
+				_log.LogError($"Primitive {prim.LocalID} has null sculpt data");
+				return;
+			}
+
+			if (prim.Sculpt.SculptTexture == UUID.Zero)
+			{
+				_log.LogWarning($"Primitive {prim.LocalID} has zero UUID for sculpt texture");
+				return;
+			}
+
+			try
+			{
+				SculptData sculptdata = new()
+				{
+					gameObject = gameObject,
+					prim = prim,
+				};
+
+				//store the gameObject and prim data for the object that requested the mesh
+				//so that it can be applied once the data is ready
+				var sculptDataList = requestedMeshes.GetOrAdd(prim.Sculpt.SculptTexture, _ => new List<SculptData>());
+				
+				lock (sculptDataList)
+				{
+					sculptDataList.Add(sculptdata);
+				}
+				
+				ClientManager.client.Assets.RequestImage(prim.Sculpt.SculptTexture, CallbackSculptTexture);
+				_log.LogDebug($"Requested sculpt texture {prim.Sculpt.SculptTexture} for primitive {prim.LocalID}");
+			}
+			catch (Exception ex)
+			{
+				_log.LogError($"Error requesting sculpt texture for primitive {prim.LocalID}: {ex.Message}\nStack trace: {ex.StackTrace}");
+			}
 		}
 
 		public void CallbackSculptTexture(TextureRequestState state, AssetTexture assetTexture)
 		{
-			if (state != TextureRequestState.Finished) return;
+			if (state != TextureRequestState.Finished) 
+			{
+				_log.LogWarning($"Sculpt texture request not finished. State: {state}");
+				return;
+			}
+
+			if (assetTexture == null)
+			{
+				_log.LogError("Received null assetTexture in CallbackSculptTexture");
+				return;
+			}
 
 #if !UNITY_ANDROID && !UNITY_IOS && !UNITY_EDITOR_OSX
 			UUID id = assetTexture.AssetID;
+			_log.LogDebug($"Processing sculpt texture callback for ID: {id}");
 
 			MeshmerizerR mesher = new();
 
 			//FIXME Replace this decode with the native code DLL version
 			try
 			{
-				var _ = assetTexture.Decode();
+				var decodedImage = assetTexture.Decode();
+				if (decodedImage == null)
+				{
+					_log.LogError($"Failed to decode sculpt texture {id}: decoded image is null");
+					return;
+				}
+			}
+			catch (OutOfMemoryException ex)
+			{
+				_log.LogError($"Out of memory when decoding sculpt texture {id}: {ex.Message}");
+				return; // Don't rethrow, gracefully handle memory issues
+			}
+			catch (ArgumentException ex)
+			{
+				_log.LogError($"Invalid argument when decoding sculpt texture {id}: {ex.Message}");
+				return; // Invalid texture data, can't proceed
 			}
 			catch (Exception ex)
 			{
-				_log.LogError("Exception Decoding Sculpt Texture. " + ex.ToString());
-				throw;
+				_log.LogError($"Unexpected exception decoding sculpt texture {id}: {ex.Message}\nStack trace: {ex.StackTrace}");
+				return; // Don't rethrow, log and continue
 			}
 
 			FacetedMesh fmesh;
 			Primitive prim;
 			try
 			{
-				// Call a method that might throw an exception
-				if (!requestedMeshes.TryGetValue(id, out var sculptDataList)) return;
-				if (sculptDataList.Count < 1) return;
+				// Validate that we have requested mesh data for this texture
+				if (!requestedMeshes.TryGetValue(id, out var sculptDataList))
+				{
+					_log.LogWarning($"No requested mesh data found for sculpt texture {id}");
+					return;
+				}
+				
+				if (sculptDataList == null || sculptDataList.Count < 1)
+				{
+					_log.LogWarning($"Empty sculpt data list for texture {id}");
+					return;
+				}
+
 				prim = sculptDataList[0].prim;
-				fmesh = mesher.GenerateFacetedSculptMesh(requestedMeshes[id][0].prim, assetTexture.Image.ExportBitmap(), DetailLevel.Highest);
+				if (prim == null)
+				{
+					_log.LogError($"Null primitive in sculpt data for texture {id}");
+					return;
+				}
+
+				if (assetTexture.Image?.ExportBitmap() == null)
+				{
+					_log.LogError($"Failed to export bitmap from asset texture {id}");
+					return;
+				}
+
+				fmesh = mesher.GenerateFacetedSculptMesh(prim, assetTexture.Image.ExportBitmap(), DetailLevel.Highest);
+				
+				if (fmesh == null || fmesh.Faces == null)
+				{
+					_log.LogError($"Failed to generate faceted mesh for sculpt texture {id}");
+					return;
+				}
 			}
-			catch (Exception e)
+			catch (ArgumentNullException ex)
 			{
-				Debug.Log(e);
+				_log.LogError($"Null argument when generating sculpt mesh for {id}: {ex.Message}");
 				return;
-				// Catch all exception cases individually
+			}
+			catch (InvalidOperationException ex)
+			{
+				_log.LogError($"Invalid operation when generating sculpt mesh for {id}: {ex.Message}");
+				return;
+			}
+			catch (Exception ex)
+			{
+				_log.LogError($"Unexpected error generating sculpt mesh for {id}: {ex.Message}\nStack trace: {ex.StackTrace}");
+				return;
 			}
 
 
@@ -445,65 +545,198 @@ namespace CrystalFrost
 
 		public void MainThreadTextureReinitialize(byte[] bytes, UUID uuid, int width, int height, int components)
 		{
+			if (bytes == null)
+			{
+				_log.LogError($"Null bytes array for texture {uuid}");
+				return;
+			}
+
+			if (width <= 0 || height <= 0)
+			{
+				_log.LogError($"Invalid texture dimensions for {uuid}: {width}x{height}");
+				return;
+			}
+
+			if (components != 3 && components != 4)
+			{
+				_log.LogError($"Invalid component count for texture {uuid}: {components}. Expected 3 or 4.");
+				return;
+			}
+
 			DebugStatsManager.AddStateUpdate(DebugStatsType.DecodedTextureProcess, uuid.ToString());
 
-			if (components == 3)
+			try
 			{
-				materialContainer[uuid].texture.Reinitialize(width, height, TextureFormat.RGB24, false);
-			}
-			else
-			{
-				materialContainer[uuid].texture.Reinitialize(width, height, TextureFormat.RGBA32, false);
-			}
-
-			materialContainer[uuid].texture.SetPixelData(bytes, 0);
-			materialContainer[uuid].texture.name = $"{uuid} Comp:{components}";
-			materialContainer[uuid].texture.Apply();
-			
-			// compression was called way too often. reduced quality of images,
-			// tanked framerate, and somehow increased render performance lol.
-			// materialContainer[uuid].texture.Compress(false);
-			materialContainer[uuid].components = (uint)components;
-
-			List<Renderer> removeMaterials = new();
-			DissolveIn dis;
-			if (components == 4)
-			{
-				for (var i = 0; i < materials[uuid].Count; i++)
+				// Validate that we have a material container for this UUID
+				if (!materialContainer.TryGetValue(uuid, out MaterialContainer container))
 				{
-					if (materials[uuid][i] == null) continue;
+					_log.LogWarning($"No material container found for texture {uuid}");
+					return;
+				}
 
-					dis = materials[uuid][i].GetComponent<DissolveIn>();
+				if (container?.texture == null)
+				{
+					_log.LogError($"Material container for {uuid} has null texture");
+					return;
+				}
 
-					Primitive.TextureEntryFace textureEntryFace;
-					PrimInfo pi = materials[uuid][i].GetComponent<PrimInfo>();
-					if (!ClientManager.simManager.scenePrims.ContainsKey(pi.localID))
+				// Reinitialize texture with appropriate format
+				TextureFormat format = components == 3 ? TextureFormat.RGB24 : TextureFormat.RGBA32;
+				
+				try
+				{
+					container.texture.Reinitialize(width, height, format, false);
+				}
+				catch (UnityException ex)
+				{
+					_log.LogError($"Failed to reinitialize texture {uuid}: {ex.Message}");
+					return;
+				}
+
+				// Set pixel data with validation
+				try
+				{
+					container.texture.SetPixelData(bytes, 0);
+					container.texture.name = $"{uuid} Comp:{components}";
+					container.texture.Apply();
+				}
+				catch (UnityException ex)
+				{
+					_log.LogError($"Failed to set pixel data for texture {uuid}: {ex.Message}");
+					return;
+				}
+				catch (ArgumentException ex)
+				{
+					_log.LogError($"Invalid pixel data for texture {uuid}: {ex.Message}");
+					return;
+				}
+
+				// compression was called way too often. reduced quality of images,
+				// tanked framerate, and somehow increased render performance lol.
+				// materialContainer[uuid].texture.Compress(false);
+				container.components = (uint)components;
+
+				// Process alpha textures if applicable
+				if (components == 4)
+				{
+					ProcessAlphaTexture(uuid);
+				}
+			}
+			catch (Exception ex)
+			{
+				_log.LogError($"Unexpected error reinitializing texture {uuid}: {ex.Message}\nStack trace: {ex.StackTrace}");
+			}
+		}
+
+		/// <summary>
+		/// Processes alpha textures and updates materials accordingly.
+		/// Separated from MainThreadTextureReinitialize for better error handling.
+		/// </summary>
+		/// <param name="uuid">The texture UUID</param>
+		private void ProcessAlphaTexture(UUID uuid)
+		{
+			try
+			{
+				if (!materials.TryGetValue(uuid, out List<Renderer> rendererList))
+				{
+					_log.LogWarning($"No renderer list found for alpha texture {uuid}");
+					return;
+				}
+
+				List<Renderer> removeMaterials = new();
+				
+				// Create a copy of the list to avoid modification during iteration
+				List<Renderer> renderersToProcess;
+				lock (rendererList)
+				{
+					renderersToProcess = new List<Renderer>(rendererList);
+				}
+
+				foreach (var renderer in renderersToProcess)
+				{
+					try
 					{
-						removeMaterials.Add(materials[uuid][i]);
-						continue;
-					}
+						if (renderer == null)
+						{
+							_log.LogWarning($"Null renderer found in materials list for texture {uuid}");
+							continue;
+						}
 
-					textureEntryFace = ClientManager.simManager.scenePrims[pi.localID].prim.Textures.GetFace((uint)pi.face);
+						DissolveIn dis = renderer.GetComponent<DissolveIn>();
+						PrimInfo pi = renderer.GetComponent<PrimInfo>();
+						
+						if (pi == null)
+						{
+							_log.LogWarning($"No PrimInfo component found on renderer for texture {uuid}");
+							removeMaterials.Add(renderer);
+							continue;
+						}
 
-					if (ClientManager.simManager.scenePrims.ContainsKey(pi.localID))
-					{
-						materials[uuid][i].name += " alpha";
+						if (!ClientManager.simManager.scenePrims.TryGetValue(pi.localID, out ScenePrimData scenePrim))
+						{
+							_log.LogDebug($"Scene prim {pi.localID} not found, marking renderer for removal");
+							removeMaterials.Add(renderer);
+							continue;
+						}
+
+						if (scenePrim.prim?.Textures == null)
+						{
+							_log.LogWarning($"Scene prim {pi.localID} has null textures");
+							continue;
+						}
+
+						Primitive.TextureEntryFace textureEntryFace = scenePrim.prim.Textures.GetFace((uint)pi.face);
+						if (textureEntryFace == null)
+						{
+							_log.LogWarning($"Failed to get texture face {pi.face} for prim {pi.localID}");
+							continue;
+						}
+
+						renderer.name += " alpha";
+						
+						if (!materialContainer.TryGetValue(uuid, out MaterialContainer container))
+						{
+							_log.LogWarning($"Material container for {uuid} not found during alpha processing");
+							continue;
+						}
+
+						Material alphaMaterial = container.GetMaterialAlpha(
+							textureEntryFace.RGBA.ToUnity(), 
+							textureEntryFace.Glow, 
+							textureEntryFace.Fullbright);
+
 						if (dis == null)
 						{
-							materials[uuid][i].sharedMaterial = materialContainer[uuid].GetMaterialAlpha(textureEntryFace.RGBA.ToUnity(), textureEntryFace.Glow, textureEntryFace.Fullbright);
+							renderer.sharedMaterial = alphaMaterial;
 						}
 						else
 						{
-							dis.newMat = materialContainer[uuid].GetMaterialAlpha(textureEntryFace.RGBA.ToUnity(), textureEntryFace.Glow, textureEntryFace.Fullbright);
+							dis.newMat = alphaMaterial;
 						}
 					}
+					catch (Exception ex)
+					{
+						_log.LogError($"Error processing alpha material for renderer: {ex.Message}");
+						removeMaterials.Add(renderer);
+					}
+				}
 
-				}
-				foreach (Renderer r in removeMaterials)
+				// Remove invalid renderers from the list
+				if (removeMaterials.Count > 0)
 				{
-					materials[uuid].Remove(r);
+					lock (rendererList)
+					{
+						foreach (Renderer r in removeMaterials)
+						{
+							rendererList.Remove(r);
+						}
+					}
+					_log.LogDebug($"Removed {removeMaterials.Count} invalid renderers for texture {uuid}");
 				}
-				//Resources.UnloadUnusedAssets();
+			}
+			catch (Exception ex)
+			{
+				_log.LogError($"Unexpected error processing alpha texture {uuid}: {ex.Message}\nStack trace: {ex.StackTrace}");
 			}
 		}
 

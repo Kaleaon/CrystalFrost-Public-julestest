@@ -141,8 +141,27 @@ public class Chat : MonoBehaviour
 				chatStrings.Enqueue(chat);
 
 			}
-			catch
+			catch (KeyNotFoundException ex)
 			{
+				// Handle case where avatar name is not yet available in the scene
+				Debug.LogWarning($"Chat from unknown avatar (ID: {e.SourceID}): {e.Message}. Error: {ex.Message}");
+				string fallbackChat = $"[{System.DateTime.UtcNow.ToShortTimeString()}] Unknown Avatar: {e.Message}";
+				chatStrings.Enqueue(fallbackChat);
+			}
+			catch (NullReferenceException ex)
+			{
+				// Handle case where scene objects are not properly initialized
+				Debug.LogError($"NullReferenceException in chat processing: {ex.Message}. Chat message: {e.Message}");
+				string fallbackChat = $"[{System.DateTime.UtcNow.ToShortTimeString()}] System: {e.Message}";
+				chatStrings.Enqueue(fallbackChat);
+			}
+			catch (Exception ex)
+			{
+				// Catch-all for any other unexpected exceptions
+				Debug.LogError($"Unexpected error processing chat message: {ex.Message}\nStack trace: {ex.StackTrace}");
+				// Still try to show the message with minimal formatting
+				string fallbackChat = $"[{System.DateTime.UtcNow.ToShortTimeString()}] Error in chat: {e.Message}";
+				chatStrings.Enqueue(fallbackChat);
 			}
 		}
 	}

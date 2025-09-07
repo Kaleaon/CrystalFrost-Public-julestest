@@ -106,7 +106,7 @@ public class SimManager : MonoBehaviour, IDisposable
 
 	public ConcurrentDictionary<UUID, uint> scenePrimIndexUUID = new();
 	public ConcurrentDictionary<uint, ScenePrimData> scenePrims = new();
-	public Dictionary<uint, List<Primitive>> orphanedPrims = new();
+	public ConcurrentDictionary<uint, List<Primitive>> orphanedPrims = new();
 	public List<MeshRequestData> meshRequests = new();
 
 	/// <summary>
@@ -301,8 +301,11 @@ public class SimManager : MonoBehaviour, IDisposable
 					{
 						if (!scenePrims.ContainsKey(prim.ParentID))
 						{
-							orphanedPrims.TryAdd(prim.ParentID, new List<Primitive>());
-							orphanedPrims[prim.ParentID].Add(prim);
+							var orphanList = orphanedPrims.GetOrAdd(prim.ParentID, _ => new List<Primitive>());
+							lock (orphanList)
+							{
+								orphanList.Add(prim);
+							}
 							go.transform.position = new Vector3(5000f, 5000f, 5000f);
 						}
 						else
@@ -315,9 +318,15 @@ public class SimManager : MonoBehaviour, IDisposable
 						prim.Position.ToUnity(),
 						prim.Rotation.ToUnity());
 
-					if (orphanedPrims.ContainsKey(prim.ParentID))
+					if (orphanedPrims.TryGetValue(prim.ParentID, out List<Primitive> orphanedList))
 					{
-						foreach (Primitive p in orphanedPrims[prim.ParentID])
+						List<Primitive> orphansToProcess;
+						lock (orphanedList)
+						{
+							orphansToProcess = new List<Primitive>(orphanedList);
+						}
+						
+						foreach (Primitive p in orphansToProcess)
 						{
 							if (p.ParentID == prim.ParentID && scenePrims.ContainsKey(prim.ParentID))
 							{
@@ -533,9 +542,9 @@ public class SimManager : MonoBehaviour, IDisposable
 			{
 				if (scenePrims.ContainsKey(data.e.ObjectLocalID))
 				{
-					if (orphanedPrims.ContainsKey(data.e.ObjectLocalID))
+					if (orphanedPrims.TryRemove(data.e.ObjectLocalID, out _))
 					{
-						orphanedPrims.Remove(data.e.ObjectLocalID);
+						// Successfully removed orphaned prim
 					}
 
 					if (scenePrims[data.e.ObjectLocalID].obj == null) continue;
@@ -1315,8 +1324,11 @@ public class SimManager : MonoBehaviour, IDisposable
 			{
 				if (!scenePrims.ContainsKey(prim.ParentID))
 				{
-					orphanedPrims.TryAdd(prim.ParentID, new List<Primitive>());
-					orphanedPrims[prim.ParentID].Add(prim);
+					var orphanList = orphanedPrims.GetOrAdd(prim.ParentID, _ => new List<Primitive>());
+					lock (orphanList)
+					{
+						orphanList.Add(prim);
+					}
 					go.transform.position = new Vector3(5000f, 5000f, 5000f);
 				}
 				else
@@ -1352,9 +1364,15 @@ public class SimManager : MonoBehaviour, IDisposable
 					prim.Rotation.ToUnity());
 			}
 
-			if (orphanedPrims.ContainsKey(prim.ParentID))
+			if (orphanedPrims.TryGetValue(prim.ParentID, out List<Primitive> orphanedList))
 			{
-				foreach (Primitive p in orphanedPrims[prim.ParentID])
+				List<Primitive> orphansToProcess;
+				lock (orphanedList)
+				{
+					orphansToProcess = new List<Primitive>(orphanedList);
+				}
+				
+				foreach (Primitive p in orphansToProcess)
 				{
 					if (p.ParentID == prim.ParentID && scenePrims.ContainsKey(prim.ParentID))
 					{
@@ -1438,12 +1456,15 @@ public class SimManager : MonoBehaviour, IDisposable
 
 	private void CleanOrphanedPrims(Primitive prim)
 	{
-		if (orphanedPrims.ContainsKey(prim.ParentID))
+		if (orphanedPrims.TryGetValue(prim.ParentID, out List<Primitive> orphanList))
 		{
-			orphanedPrims[prim.ParentID].Remove(prim);
-			if (orphanedPrims[prim.ParentID].Count == 0)
+			lock (orphanList)
 			{
-				orphanedPrims.Remove(prim.ParentID);
+				orphanList.Remove(prim);
+				if (orphanList.Count == 0)
+				{
+					orphanedPrims.TryRemove(prim.ParentID, out _);
+				}
 			}
 		}
 	}

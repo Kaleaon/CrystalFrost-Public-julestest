@@ -25,7 +25,7 @@ namespace CrystalFrost
 {
 	/// <summary>
 	/// Manages asset caching, texture processing, and material creation for the Crystal Frost viewer.
-	/// Implements proper disposal patterns to prevent memory leaks.
+	/// Implements proper disposal patterns to prevent memory leaks and thread safety for concurrent access.
 	/// </summary>
 	public class CFAssetManager : IDisposable
 	{
@@ -40,9 +40,15 @@ namespace CrystalFrost
 		private readonly ILogger<CFAssetManager> _log;
 
 		/// <summary>
-		/// Pool of white textures to reduce instantiation overhead.
+		/// Read-write lock for protecting critical sections during material operations.
 		/// </summary>
-		private readonly Queue<Texture2D> _whiteTexturePool = new Queue<Texture2D>();
+		private readonly ReaderWriterLockSlim _materialLock = new ReaderWriterLockSlim();
+
+		/// <summary>
+		/// Pool of white textures to reduce instantiation overhead.
+		/// Thread-safe using ConcurrentQueue for multi-threaded access.
+		/// </summary>
+		private readonly ConcurrentQueue<Texture2D> _whiteTexturePool = new ConcurrentQueue<Texture2D>();
 		private const int MaxPoolSize = 100; // Limit pool size to prevent excessive memory usage
 
 		public CFAssetManager()
@@ -67,26 +73,27 @@ namespace CrystalFrost
 			public Mesh[] meshMedium;
 		}
 
-		public Dictionary<UUID, SLMeshData> meshCache = new();
-		public Dictionary<UUID, AudioClip> sounds = new();
-		public Dictionary<UUID, List<Renderer>> materials = new();
-		public Dictionary<UUID, int> componentsDict = new();
+		public ConcurrentDictionary<UUID, SLMeshData> meshCache = new();
+		public ConcurrentDictionary<UUID, AudioClip> sounds = new();
+		public ConcurrentDictionary<UUID, List<Renderer>> materials = new();
+		public ConcurrentDictionary<UUID, int> componentsDict = new();
 		public List<MeshRenderer> fullbrights = new();
 
 		public Material zeroMaterial;
 
-		public Dictionary<UUID, MaterialContainer> materialContainer = new();
+		public ConcurrentDictionary<UUID, MaterialContainer> materialContainer = new();
 
 		/// <summary>
 		/// Gets a white texture from the pool or creates a new one if the pool is empty.
 		/// This reduces garbage collection pressure from repeated texture instantiation.
+		/// Thread-safe implementation using ConcurrentQueue.
 		/// </summary>
 		/// <returns>A white texture instance</returns>
 		private Texture2D GetPooledWhiteTexture()
 		{
-			if (_whiteTexturePool.Count > 0)
+			if (_whiteTexturePool.TryDequeue(out Texture2D pooledTexture))
 			{
-				return _whiteTexturePool.Dequeue();
+				return pooledTexture;
 			}
 
 			// Create new texture if pool is empty
@@ -95,6 +102,7 @@ namespace CrystalFrost
 
 		/// <summary>
 		/// Returns a white texture to the pool for reuse, if the pool isn't full.
+		/// Thread-safe implementation using ConcurrentQueue.
 		/// </summary>
 		/// <param name="texture">The texture to return to the pool</param>
 		private void ReturnTextureToPool(Texture2D texture)
@@ -154,6 +162,7 @@ namespace CrystalFrost
 		/// <summary>
 		/// Requests a texture for rendering on a specific submesh of a renderer.
 		/// Uses texture pooling to reduce memory allocation overhead.
+		/// Thread-safe implementation with proper locking for concurrent access.
 		/// </summary>
 		/// <param name="uuid">The UUID of the texture to request</param>
 		/// <param name="rendr">The renderer to apply the texture to</param>
@@ -173,32 +182,92 @@ namespace CrystalFrost
 				return null;
 			}
 
-			if (!materials.ContainsKey(uuid))
+			// Use read lock for checking if material already exists
+			_materialLock.EnterReadLock();
+			try
 			{
-				materials.Add(uuid, new List<Renderer>());
+				// Check if we already have material container
+				if (materialContainer.TryGetValue(uuid, out MaterialContainer existingContainer))
+				{
+					// We have the container, get the material and apply it
+					Material existingMaterial = existingContainer.GetMaterial(color, glow, fullbright);
+					ApplyMaterialToRenderer(rendr, subMeshIndex, existingMaterial);
+					
+					// Add renderer to materials list if not already present
+					AddRendererToMaterialsList(uuid, rendr);
+					
+					// Request texture if not ready
+					if (!existingContainer.ready)
+					{
+						DebugStatsManager.AddStateUpdate(DebugStatsType.TextureDownloadRequest, uuid.ToString());
+						_assetManager.Textures.RequestImage(uuid);
+						existingContainer.ready = true;
+					}
+					
+					return existingMaterial;
+				}
+			}
+			finally
+			{
+				_materialLock.ExitReadLock();
 			}
 
-			if (!materials[uuid].Contains(rendr))
+			// Need to create new material container - upgrade to write lock
+			_materialLock.EnterWriteLock();
+			try
 			{
-				materials[uuid].Add(rendr);
-			}
+				// Double-check that another thread didn't create it while we were waiting
+				if (materialContainer.TryGetValue(uuid, out MaterialContainer doubleCheckContainer))
+				{
+					Material existingMaterial = doubleCheckContainer.GetMaterial(color, glow, fullbright);
+					ApplyMaterialToRenderer(rendr, subMeshIndex, existingMaterial);
+					AddRendererToMaterialsList(uuid, rendr);
+					
+					if (!doubleCheckContainer.ready)
+					{
+						DebugStatsManager.AddStateUpdate(DebugStatsType.TextureDownloadRequest, uuid.ToString());
+						_assetManager.Textures.RequestImage(uuid);
+						doubleCheckContainer.ready = true;
+					}
+					
+					return existingMaterial;
+				}
 
-			if (!materialContainer.ContainsKey(uuid))
-			{
-				// Use pooled texture instead of direct instantiation
+				// Create new material container with pooled texture
 				Texture2D pooledTexture = GetPooledWhiteTexture();
-				materialContainer.Add(uuid, new MaterialContainer(uuid, pooledTexture, 3));
+				var newContainer = new MaterialContainer(uuid, pooledTexture, 3);
+				materialContainer.TryAdd(uuid, newContainer);
+
+				Material newMaterial = newContainer.GetMaterial(color, glow, fullbright);
+				ApplyMaterialToRenderer(rendr, subMeshIndex, newMaterial);
+				AddRendererToMaterialsList(uuid, rendr);
+
+				DebugStatsManager.AddStateUpdate(DebugStatsType.TextureDownloadRequest, uuid.ToString());
+				_assetManager.Textures.RequestImage(uuid);
+				newContainer.ready = true;
+
+				return newMaterial;
 			}
+			finally
+			{
+				_materialLock.ExitWriteLock();
+			}
+		}
 
-			Material newMaterial = materialContainer[uuid].GetMaterial(color, glow, fullbright);
-
-			// Apply the new material to the specific submesh with bounds checking
+		/// <summary>
+		/// Helper method to apply material to renderer with proper error handling.
+		/// </summary>
+		/// <param name="rendr">The renderer to apply material to</param>
+		/// <param name="subMeshIndex">The submesh index</param>
+		/// <param name="material">The material to apply</param>
+		private void ApplyMaterialToRenderer(Renderer rendr, int subMeshIndex, Material material)
+		{
 			try
 			{
 				Material[] mats = rendr.materials;
 				if (subMeshIndex >= 0 && subMeshIndex < mats.Length)
 				{
-					mats[subMeshIndex] = newMaterial;
+					mats[subMeshIndex] = material;
 					rendr.materials = mats;
 				}
 				else
@@ -209,23 +278,32 @@ namespace CrystalFrost
 			catch (Exception ex)
 			{
 				_log.LogError($"Error applying material to renderer: {ex.Message}");
-				return null;
 			}
+		}
 
-			if (!materialContainer[uuid].ready)
+		/// <summary>
+		/// Helper method to add renderer to materials list thread-safely.
+		/// </summary>
+		/// <param name="uuid">The texture UUID</param>
+		/// <param name="rendr">The renderer to add</param>
+		private void AddRendererToMaterialsList(UUID uuid, Renderer rendr)
+		{
+			var rendererList = materials.GetOrAdd(uuid, _ => new List<Renderer>());
+			
+			lock (rendererList)
 			{
-				DebugStatsManager.AddStateUpdate(DebugStatsType.TextureDownloadRequest, uuid.ToString());
-				_assetManager.Textures.RequestImage(uuid);
-				materialContainer[uuid].ready = true;
+				if (!rendererList.Contains(rendr))
+				{
+					rendererList.Add(rendr);
+				}
 			}
-
-			return newMaterial;
 		}
 
 
 		/// <summary>
 		/// Requests a texture for terrain rendering.
 		/// Uses texture pooling to reduce memory allocation overhead.
+		/// Thread-safe implementation with proper locking.
 		/// </summary>
 		/// <param name="uuid">The UUID of the texture to request</param>
 		/// <returns>The texture for terrain rendering</returns>
@@ -233,23 +311,48 @@ namespace CrystalFrost
 		{
 			if (uuid == UUID.Zero) return null;
 
-			if (!materials.ContainsKey(uuid)) 
-				materials.Add(uuid, new List<Renderer>());
-
-			// Check if texture is already cached
-			if (materialContainer.ContainsKey(uuid))
+			// Use read lock to check if texture already exists
+			_materialLock.EnterReadLock();
+			try
 			{
-				return materialContainer[uuid].texture;
+				if (materialContainer.TryGetValue(uuid, out MaterialContainer existingContainer))
+				{
+					// Ensure materials list exists for this UUID
+					materials.GetOrAdd(uuid, _ => new List<Renderer>());
+					return existingContainer.texture;
+				}
+			}
+			finally
+			{
+				_materialLock.ExitReadLock();
 			}
 
-			// Use pooled texture instead of direct instantiation
-			Texture2D pooledTexture = GetPooledWhiteTexture();
-			materialContainer.Add(uuid, new MaterialContainer(uuid, pooledTexture, 3));
+			// Need to create new container - upgrade to write lock
+			_materialLock.EnterWriteLock();
+			try
+			{
+				// Double-check that another thread didn't create it
+				if (materialContainer.TryGetValue(uuid, out MaterialContainer doubleCheckContainer))
+				{
+					materials.GetOrAdd(uuid, _ => new List<Renderer>());
+					return doubleCheckContainer.texture;
+				}
 
-			// Request the actual texture data
-			_assetManager.Textures.RequestImage(uuid);
+				// Create new material container with pooled texture
+				Texture2D pooledTexture = GetPooledWhiteTexture();
+				var newContainer = new MaterialContainer(uuid, pooledTexture, 3);
+				materialContainer.TryAdd(uuid, newContainer);
+				materials.GetOrAdd(uuid, _ => new List<Renderer>());
 
-			return materialContainer[uuid].texture;
+				// Request the actual texture data
+				_assetManager.Textures.RequestImage(uuid);
+
+				return newContainer.texture;
+			}
+			finally
+			{
+				_materialLock.ExitWriteLock();
+			}
 		}
 
 
@@ -435,23 +538,46 @@ namespace CrystalFrost
         {
             _log.LogInformation("CFAssetManager disposing resources...");
 
-            // Dispose all MaterialContainer instances to prevent memory leaks
-            foreach (var container in materialContainer.Values)
+            _materialLock.EnterWriteLock();
+            try
             {
-                try
+                // Dispose all MaterialContainer instances to prevent memory leaks
+                foreach (var container in materialContainer.Values)
                 {
-                    container?.Dispose();
+                    try
+                    {
+                        container?.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.LogError($"Error disposing MaterialContainer: {ex.Message}");
+                    }
                 }
-                catch (Exception ex)
+
+                // Clear all caches and collections
+                concurrentMeshQueue = new ConcurrentQueue<MeshQueueItem>();
+                meshCache.Clear();
+                sounds.Clear();
+                materials.Clear();
+                componentsDict.Clear();
+                fullbrights.Clear();
+                materialContainer.Clear();
+                requestedMeshes.Clear();
+
+                // Clear renderer lists to prevent holding references to destroyed objects
+                foreach (var rendererList in materials.Values)
                 {
-                    _log.LogError($"Error disposing MaterialContainer: {ex.Message}");
+                    rendererList.Clear();
                 }
+            }
+            finally
+            {
+                _materialLock.ExitWriteLock();
             }
 
             // Dispose pooled textures
-            while (_whiteTexturePool.Count > 0)
+            while (_whiteTexturePool.TryDequeue(out Texture2D texture))
             {
-                var texture = _whiteTexturePool.Dequeue();
                 try
                 {
                     if (texture != null)
@@ -467,16 +593,6 @@ namespace CrystalFrost
                     _log.LogError($"Error disposing pooled texture: {ex.Message}");
                 }
             }
-
-            // Clear all caches and collections
-            concurrentMeshQueue = new ConcurrentQueue<MeshQueueItem>();
-            meshCache.Clear();
-            sounds.Clear();
-            materials.Clear();
-            componentsDict.Clear();
-            fullbrights.Clear();
-            materialContainer.Clear();
-            requestedMeshes.Clear();
 
             // Dispose AudioClips to prevent memory leaks
             foreach (var audioClip in sounds.Values)
@@ -497,11 +613,8 @@ namespace CrystalFrost
                 }
             }
 
-            // Clear renderer lists to prevent holding references to destroyed objects
-            foreach (var rendererList in materials.Values)
-            {
-                rendererList.Clear();
-            }
+            // Dispose the lock
+            _materialLock?.Dispose();
 
             _log.LogInformation("CFAssetManager disposed successfully.");
         }

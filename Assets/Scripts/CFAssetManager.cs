@@ -42,7 +42,7 @@ namespace CrystalFrost
 		/// <summary>
 		/// Read-write lock for protecting critical sections during material operations.
 		/// </summary>
-		private readonly ReaderWriterLockSlim _materialLock = new ReaderWriterLockSlim();
+		private readonly object _materialLock = new object();
 
 		/// <summary>
 		/// Pool of white textures to reduce instantiation overhead.

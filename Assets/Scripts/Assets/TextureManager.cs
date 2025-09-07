@@ -5,6 +5,7 @@ using OpenMetaverse;
 using OpenMetaverse.Assets;
 using Microsoft.Extensions.Logging;
 using CrystalFrost.Services;
+using CrystalFrost.Performance;
 
 namespace CrystalFrost.Assets
 {
@@ -16,6 +17,7 @@ namespace CrystalFrost.Assets
     {
         private readonly ILogger<TextureManager> _logger;
         private readonly IClientManagerService _clientManagerService;
+        private readonly TextureCompressionManager _compressionManager;
         
         // Texture pooling for performance optimization
         private readonly ConcurrentQueue<Texture2D> _whiteTexturePool = new();
@@ -30,6 +32,11 @@ namespace CrystalFrost.Assets
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _clientManagerService = clientManagerService ?? throw new ArgumentNullException(nameof(clientManagerService));
+            
+            // Initialize texture compression manager
+            _compressionManager = new TextureCompressionManager(
+                Services.GetService<ILogger<TextureCompressionManager>>()
+            );
             
             InitializeTexturePool();
         }
@@ -158,14 +165,16 @@ namespace CrystalFrost.Assets
                 {
                     texture.name = assetTexture.AssetID.ToString();
                     
-                    // Apply texture settings
-                    texture.wrapMode = TextureWrapMode.Repeat;
-                    texture.filterMode = FilterMode.Bilinear;
+                    // Apply compression optimization
+                    texture = _compressionManager.OptimizeTexture(texture, HasAlphaChannel(texture));
+                    
+                    // Apply optimized texture settings
+                    _compressionManager.OptimizeTextureSettings(texture, false, true);
                     
                     // Cache the texture
                     _textureCache[assetTexture.AssetID] = texture;
                     
-                    _logger.LogDebug($"Successfully processed texture {assetTexture.AssetID}");
+                    _logger.LogDebug($"Successfully processed and optimized texture {assetTexture.AssetID}");
                 }
                 else
                 {
@@ -180,6 +189,30 @@ namespace CrystalFrost.Assets
             finally
             {
                 _processingTextures.TryRemove(assetTexture.AssetID, out _);
+            }
+        }
+
+        private bool HasAlphaChannel(Texture2D texture)
+        {
+            try
+            {
+                // Quick check for alpha in a sample of pixels to avoid processing entire texture
+                Color[] samplePixels = texture.GetPixels(0, 0, Mathf.Min(32, texture.width), Mathf.Min(32, texture.height));
+                
+                for (int i = 0; i < samplePixels.Length; i += 4) // Sample every 4th pixel
+                {
+                    if (samplePixels[i].a < 0.99f)
+                    {
+                        return true;
+                    }
+                }
+                
+                return false;
+            }
+            catch
+            {
+                // If we can't check, assume it has alpha to be safe
+                return true;
             }
         }
 

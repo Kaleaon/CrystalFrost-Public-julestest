@@ -123,7 +123,7 @@ namespace CrystalFrost.Controllers
             {
                 _logger.LogError(ex, "Exception during login");
                 OnStatusUpdate?.Invoke($"Login error: {ex.Message}");
-                ClientManager.active = false;
+                _clientManagerService.Active = false;
             }
         }
 

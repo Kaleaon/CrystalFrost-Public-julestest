@@ -301,11 +301,8 @@ public class SimManager : MonoBehaviour, IDisposable
 					{
 						if (!scenePrims.ContainsKey(prim.ParentID))
 						{
-							var orphanList = orphanedPrims.GetOrAdd(prim.ParentID, _ => new List<Primitive>());
-							lock (orphanList)
-							{
-								orphanList.Add(prim);
-							}
+							var orphanList = orphanedPrims.GetOrAdd(prim.ParentID, _ => new ConcurrentBag<Primitive>());
+							orphanList.Add(prim);
 							// Null check before accessing transform
 							if (go?.transform != null)
 							{

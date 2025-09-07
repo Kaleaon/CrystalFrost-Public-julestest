@@ -6,9 +6,6 @@ using System.Threading;
 using UnityEngine;
 using System.Linq;
 using OpenMetaverse.StructuredData;
-using CrystalFrost.UI;
-using Microsoft.Extensions.Logging;
-using CrystalFrost;
 
 public class InventoryManager : MonoBehaviour
 {
@@ -22,28 +19,9 @@ public class InventoryManager : MonoBehaviour
 	bool InitialUpdateDone = false;
 	public Dictionary<UUID, InventoryItem> Content = new();
 	public InventoryFolder Inv;
-	
-	private ILogger<InventoryManager> _logger;
-	private IUIStateTracker _uiStateTracker;
 
 	private void Start()
 	{
-		try
-		{
-			_logger = Services.GetService<ILogger<InventoryManager>>();
-		}
-		catch (System.Exception ex)
-		{
-			Debug.LogError($"Failed to get logger for InventoryManager: {ex.Message}");
-		}
-
-		// Find the UI state tracker in the scene
-		_uiStateTracker = FindObjectOfType<UIStateTracker>();
-		if (_uiStateTracker == null)
-		{
-			Debug.LogWarning("UIStateTracker not found in scene. UI tracking will be disabled for InventoryManager.");
-		}
-		
 		RegisterClientEvents(ClientManager.client);
 	}
 
@@ -358,14 +336,6 @@ public class InventoryManager : MonoBehaviour
 	/// <param name="replace">Replace existing attachment at that point first?</param>
 	public void Attach(InventoryItem item, AttachmentPoint point, bool replace)
 	{
-		// Track attachment action
-		_uiStateTracker?.TrackInteraction(gameObject, "InventoryManager", "AttachItem", new { 
-			itemId = item.UUID.ToString(), 
-			itemName = item.Name, 
-			attachmentPoint = point.ToString(), 
-			replace 
-		});
-		
 		Client.Appearance.Attach(item, point, replace);
 		AddLink(item);
 	}
@@ -449,13 +419,6 @@ public class InventoryManager : MonoBehaviour
 	public void Detach(InventoryItem item)
 	{
 		var realItem = RealInventoryItem(item);
-		
-		// Track detachment action
-		_uiStateTracker?.TrackInteraction(gameObject, "InventoryManager", "DetachItem", new { 
-			itemId = realItem.UUID.ToString(), 
-			itemName = realItem.Name 
-		});
-		
 		//if (ClientManager.RLV.AllowDetach(realItem))
 		//{
 		Client.Appearance.Detach(item);
@@ -504,12 +467,6 @@ public class InventoryManager : MonoBehaviour
 	/// <param name="outfit">List of new wearables and attachments that comprise the new outfit</param>
 	public void ReplaceOutfit(List<InventoryItem> newOutfit)
 	{
-		// Track outfit replacement
-		_uiStateTracker?.TrackInteraction(gameObject, "InventoryManager", "ReplaceOutfit", new { 
-			outfitItemCount = newOutfit.Count,
-			itemIds = newOutfit.Select(i => i.UUID.ToString()).ToArray()
-		});
-		
 		// Resolve inventory links
 		List<InventoryItem> outfit = new();
 		foreach (var item in newOutfit)
@@ -591,13 +548,6 @@ public class InventoryManager : MonoBehaviour
 	/// <param name="replace">Should existing wearable of the same type be removed</param>
 	public void AddToOutfit(List<InventoryItem> items, bool replace)
 	{
-		// Track outfit addition
-		_uiStateTracker?.TrackInteraction(gameObject, "InventoryManager", "AddToOutfit", new { 
-			itemCount = items.Count,
-			replace,
-			itemIds = items.Select(i => i.UUID.ToString()).ToArray()
-		});
-		
 		List<InventoryItem> current = ContentLinks();
 		List<UUID> toRemove = new();
 
@@ -662,12 +612,6 @@ public class InventoryManager : MonoBehaviour
 	/// <param name="items">List of items to remove</param>
 	public void RemoveFromOutfit(List<InventoryItem> items)
 	{
-		// Track outfit removal
-		_uiStateTracker?.TrackInteraction(gameObject, "InventoryManager", "RemoveFromOutfit", new { 
-			itemCount = items.Count,
-			itemIds = items.Select(i => i.UUID.ToString()).ToArray()
-		});
-		
 		// Resolve inventory links
 		List<InventoryItem> outfit = new();
 		foreach (var item in items)

@@ -125,33 +125,84 @@ public class SimManager : MonoBehaviour, IDisposable
 	private readonly ConcurrentQueue<UUIDNameReplyEvent> _nameReplyEvents = new();
 	private ConcurrentQueue<ScenePrimData> unTexturedPrims = new();
 
+	/// <summary>
+	/// Handles avatar name replies efficiently with improved lookup performance.
+	/// Uses optimized collection access patterns and reduced allocations.
+	/// </summary>
+	/// <param name="sender">Event sender</param>
+	/// <param name="e">Event arguments containing name mappings</param>
 	void AvatarNamesEventHandler(object sender, UUIDNameReplyEventArgs e)
 	{
-		foreach (KeyValuePair<UUID, string> kvp in e.Names)
+		if (e?.Names == null)
 		{
-			if (scenePrimIndexUUID.ContainsKey(kvp.Key))
+			_log?.LogWarning("AvatarNamesEventHandler received null or invalid event args");
+			return;
+		}
+
+		// Process each name mapping efficiently
+		foreach (var kvp in e.Names)
+		{
+			try
 			{
-				if (scenePrims.TryGetValue(scenePrimIndexUUID[kvp.Key], out ScenePrimData sPrim))
+				// Optimized lookup using TryGetValue to avoid double dictionary access
+				if (scenePrimIndexUUID.TryGetValue(kvp.Key, out uint primIndex))
 				{
-					//Debug.Log($"NAME RECEIVED: {kvp.Value}");
-					_nameReplyEvents.Enqueue(new UUIDNameReplyEvent { uuid = kvp.Key, name = kvp.Value });
-					//UnityMainThreadDispatcher.Instance().Enqueue(() => sPrim.SetName(kvp.Value));
+					if (scenePrims.TryGetValue(primIndex, out ScenePrimData sPrim))
+					{
+						// Enqueue name reply for main thread processing
+						var nameReplyEvent = new UUIDNameReplyEvent 
+						{ 
+							uuid = kvp.Key, 
+							name = kvp.Value 
+						};
+						
+						_nameReplyEvents.Enqueue(nameReplyEvent);
+					}
+				}
+				else
+				{
+					// Request avatar name if not found in scene prims
+					ClientManager.client?.Avatars?.RequestAvatarName(kvp.Key);
 				}
 			}
-			else
+			catch (Exception ex)
 			{
-				ClientManager.client.Avatars.RequestAvatarName(kvp.Key);
+				_log?.LogError($"Error processing avatar name for UUID {kvp.Key}: {ex.Message}");
 			}
 		}
 	}
 
-	// Do an action on all the simulators
-	// TODO: Figure out locking (should list be locked when iterating?). Maybe use yield return?
+	/// <summary>
+	/// Executes an action on all simulator containers with proper error handling.
+	/// Uses efficient enumeration patterns and includes safety checks.
+	/// </summary>
+	/// <param name="action">The action to execute on each simulator container</param>
 	private void ForEachSimContainer(Action<SimulatorContainer> action)
 	{
+		if (action == null)
+		{
+			_log?.LogWarning("ForEachSimContainer called with null action");
+			return;
+		}
+
+		// Use efficient enumeration with proper exception handling
 		foreach (var kvp in simulators)
 		{
-			action(kvp.Value);
+			try
+			{
+				if (kvp.Value != null)
+				{
+					action(kvp.Value);
+				}
+				else
+				{
+					_log?.LogWarning($"Null simulator container found for key: {kvp.Key}");
+				}
+			}
+			catch (Exception ex)
+			{
+				_log?.LogError($"Error executing action on simulator container {kvp.Key}: {ex.Message}");
+			}
 		}
 	}
 

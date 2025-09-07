@@ -16,39 +16,58 @@ using UnityEditor.VersionControl;
 using OMVVector2 = OpenMetaverse.Vector2;
 using Vector2 = UnityEngine.Vector2;
 
-public class Chat : MonoBehaviour
-{
-	public UnityEngine.UI.Button dummyButton;
-    // Start is called before the first frame update
-    public TMP_Text log;
-    //public GameObjec
-    public GameObject chatTabButtonPrefab;
-	public GameObject nearbyButton;
-    public Transform chatTabRoot;
-	public TMP_InputField input;
-	public TMP_Text inputText;
-	UUID selectedChat = UUID.Zero;
+	/// <summary>
+	/// Main chat system handling local chat, instant messaging, and group chat.
+	/// Implements efficient event processing and UI management with proper error handling.
+	/// </summary>
+	public class Chat : MonoBehaviour
+	{
+		#region Constants
+		private const float TabOffsetY = 30f;
+		private const float EnterCooldownTime = 0.25f;
+		private const string ZeroByteWidthSpace = "\u200B";
+		#endregion
 
-	public Dictionary<UUID, string> avatarNames = new();
+		#region Public Fields
+		public UnityEngine.UI.Button dummyButton;
+		public TMP_Text log;
+		public GameObject chatTabButtonPrefab;
+		public GameObject nearbyButton;
+		public Transform chatTabRoot;
+		public TMP_InputField input;
+		public TMP_Text inputText;
+		#endregion
+
+		#region Private Fields
+		private UUID selectedChat = UUID.Zero;
+		private float lastEnterUp = 0f;
+		private readonly Dictionary<UUID, string> avatarNames = new();
+		private readonly ConcurrentQueue<string> chatStrings = new();
+		#endregion
 	private void Awake()
 	{
         ClientManager.chat = this;
 	}
-	public class ChatTab
-    {
-        public string name;
-        public UUID uuid;
-        public string log;
-        public GameObject tabButton;
-        public bool isGroupChat = false;
-    }
+		/// <summary>
+		/// Represents a chat tab for organizing different conversation types.
+		/// </summary>
+		public class ChatTab
+		{
+			public string name;
+			public UUID uuid;
+			public string log;
+			public GameObject tabButton;
+			public bool isGroupChat = false;
+		}
 
-
-    public class ChatEvent
-    {
-        public UUID uuid;
-        public string newchat;
-    }
+		/// <summary>
+		/// Event data for chat message processing.
+		/// </summary>
+		public class ChatEvent
+		{
+			public UUID uuid;
+			public string newchat;
+		}
 
     public ConcurrentDictionary<UUID, ChatTab> tabs = new();
     public ConcurrentQueue<InstantMessageEventArgs> imEvents = new();
@@ -119,9 +138,46 @@ public class Chat : MonoBehaviour
 		avatarNames.TryAdd(uuid, name);
 	}
 
-	private readonly ConcurrentQueue<string> chatStrings = new();
-	void ChatFromSimulator(object sender, ChatEventArgs e)
+	/// <summary>
+	/// Efficiently positions a new chat tab button using optimized calculations.
+	/// </summary>
+	/// <param name="button">The button GameObject to position</param>
+	/// <param name="tabCount">The current number of tabs (for positioning)</param>
+	private void PositionChatTabButton(GameObject button, int tabCount)
 	{
+		if (button == null) return;
+
+		var rect = button.GetComponent<RectTransform>();
+		if (rect == null) return;
+
+		Vector2 anchoredPos = rect.anchoredPosition;
+		anchoredPos.y -= TabOffsetY * tabCount;
+		rect.anchoredPosition = anchoredPos;
+	}
+
+	/// <summary>
+	/// Formats a chat message with timestamp and proper HTML escaping.
+	/// Uses efficient string operations to minimize allocations.
+	/// </summary>
+	/// <param name="timestamp">The message timestamp</param>
+	/// <param name="senderName">The name of the message sender</param>
+	/// <param name="message">The message content</param>
+	/// <param name="chatType">The type of chat (for formatting)</param>
+	/// <returns>Formatted chat string</returns>
+	private string FormatChatMessage(DateTime timestamp, string senderName, string message, ChatType chatType = ChatType.Normal)
+	{
+		string timeStr = timestamp.ToShortTimeString();
+		string escapedMessage = message.Replace("<", $"<{ZeroByteWidthSpace}");
+		
+		return chatType switch
+		{
+			ChatType.Whisper => $"[{timeStr}] {senderName}: <i><size=80%>{escapedMessage}</size></i>",
+			ChatType.Shout => $"[{timeStr}] {senderName}: <b><size=120%>{escapedMessage}</size></b>",
+			_ => $"[{timeStr}] {senderName}: {escapedMessage}"
+		};
+	}
+
+	void ChatFromSimulator(object sender, ChatEventArgs e)
 		if ((int)e.Type <= 3)
 		{
 			string chat = ($"[{System.DateTime.UtcNow.ToShortTimeString()}] {ClientManager.simManager.scenePrims[ClientManager.simManager.scenePrimIndexUUID[e.SourceID]].name}: {e.Message}").Replace("<", "<\u200B"); ;

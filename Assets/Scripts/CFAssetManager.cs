@@ -41,21 +41,26 @@ namespace CrystalFrost
 
 		/// <summary>
 		/// Read-write lock for protecting critical sections during material operations.
+		/// Provides better performance than object locks for read-heavy scenarios.
 		/// </summary>
-		private readonly object _materialLock = new object();
+		private readonly ReaderWriterLockSlim _materialLock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
 
 		/// <summary>
 		/// Pool of white textures to reduce instantiation overhead.
 		/// Thread-safe using ConcurrentQueue for multi-threaded access.
 		/// </summary>
 		private readonly ConcurrentQueue<Texture2D> _whiteTexturePool = new ConcurrentQueue<Texture2D>();
-		private const int MaxPoolSize = 100; // Limit pool size to prevent excessive memory usage
+		private const int MaxPoolSize = 50; // Optimized pool size for memory efficiency
+		private const int MinPoolSize = 10; // Maintain minimum pool size for performance
 
 		public CFAssetManager()
 		{
 			_log = Services.GetService<ILogger<CFAssetManager>>();
 			_transformTextureCoords = Services.GetService<ITransformTexCoords>();
 			_assetManager = Services.GetService<IAssetManager>();
+			
+			// Initialize texture pool for optimal performance
+			InitializeTexturePool();
 		}
 
 		public class MeshQueueItem
@@ -98,6 +103,39 @@ namespace CrystalFrost
 
 			// Create new texture if pool is empty
 			return Texture2D.Instantiate(Texture2D.whiteTexture);
+		}
+
+		/// <summary>
+		/// Returns a texture to the pool for reuse, preventing memory waste.
+		/// Only adds to pool if under the maximum size to prevent memory bloat.
+		/// </summary>
+		/// <param name="texture">The texture to return to the pool</param>
+		private void ReturnTextureToPool(Texture2D texture)
+		{
+			if (texture != null && _whiteTexturePool.Count < MaxPoolSize)
+			{
+				_whiteTexturePool.Enqueue(texture);
+			}
+			else if (texture != null)
+			{
+				// Pool is full, destroy the texture to prevent memory leaks
+				if (Application.isPlaying)
+					UnityEngine.Object.Destroy(texture);
+				else
+					UnityEngine.Object.DestroyImmediate(texture);
+			}
+		}
+
+		/// <summary>
+		/// Initializes the texture pool with minimum required textures.
+		/// Called during manager initialization to ensure pool readiness.
+		/// </summary>
+		private void InitializeTexturePool()
+		{
+			for (int i = 0; i < MinPoolSize; i++)
+			{
+				_whiteTexturePool.Enqueue(Texture2D.Instantiate(Texture2D.whiteTexture));
+			}
 		}
 
 		/// <summary>
@@ -834,49 +872,100 @@ namespace CrystalFrost
         /// <summary>
         /// Disposes of all assets and clears caches to prevent memory leaks.
         /// This should be called when logging out or switching grids.
+        /// Implements proper disposal pattern with lock safety.
         /// </summary>
         public void Dispose()
         {
-            _log.LogInformation("CFAssetManager disposing resources...");
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
 
-            _materialLock.EnterWriteLock();
-            try
+        private bool _disposed = false;
+
+        /// <summary>
+        /// Protected dispose method following standard disposal pattern.
+        /// </summary>
+        /// <param name="disposing">True if disposing from Dispose(), false if from finalizer</param>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed) return;
+
+            if (disposing)
             {
-                // Dispose all MaterialContainer instances to prevent memory leaks
-                foreach (var container in materialContainer.Values)
+                _log.LogInformation("CFAssetManager disposing resources...");
+
+                // Safely dispose with proper locking
+                try
                 {
+                    _materialLock.EnterWriteLock();
                     try
                     {
-                        container?.Dispose();
+                        // Dispose all MaterialContainer instances to prevent memory leaks
+                        foreach (var container in materialContainer.Values)
+                        {
+                            try
+                            {
+                                container?.Dispose();
+                            }
+                            catch (Exception ex)
+                            {
+                                _log.LogError($"Error disposing MaterialContainer: {ex.Message}");
+                            }
+                        }
+
+                        // Clear all caches and collections
+                        concurrentMeshQueue = new ConcurrentQueue<MeshQueueItem>();
+                        meshCache.Clear();
+                        sounds.Clear();
+                        materials.Clear();
+                        componentsDict.Clear();
+                        fullbrights.Clear();
+                        materialContainer.Clear();
+                        requestedMeshes.Clear();
+
+                        // Clear renderer lists to prevent holding references to destroyed objects
+                        foreach (var rendererList in materials.Values)
+                        {
+                            rendererList.Clear();
+                        }
                     }
-                    catch (Exception ex)
+                    finally
                     {
-                        _log.LogError($"Error disposing MaterialContainer: {ex.Message}");
+                        _materialLock.ExitWriteLock();
                     }
                 }
-
-                // Clear all caches and collections
-                concurrentMeshQueue = new ConcurrentQueue<MeshQueueItem>();
-                meshCache.Clear();
-                sounds.Clear();
-                materials.Clear();
-                componentsDict.Clear();
-                fullbrights.Clear();
-                materialContainer.Clear();
-                requestedMeshes.Clear();
-
-                // Clear renderer lists to prevent holding references to destroyed objects
-                foreach (var rendererList in materials.Values)
+                catch (Exception ex)
                 {
-                    rendererList.Clear();
+                    _log.LogError($"Error during asset disposal: {ex.Message}");
                 }
-            }
-            finally
-            {
-                _materialLock.ExitWriteLock();
+
+                // Dispose pooled textures
+                DisposeTexturePool();
+
+                // Dispose AudioClips to prevent memory leaks
+                DisposeAudioClips();
+
+                // Dispose the lock last
+                try
+                {
+                    _materialLock?.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError($"Error disposing material lock: {ex.Message}");
+                }
+
+                _log.LogInformation("CFAssetManager disposed successfully.");
             }
 
-            // Dispose pooled textures
+            _disposed = true;
+        }
+
+        /// <summary>
+        /// Properly dispose all pooled textures.
+        /// </summary>
+        private void DisposeTexturePool()
+        {
             while (_whiteTexturePool.TryDequeue(out Texture2D texture))
             {
                 try
@@ -894,8 +983,13 @@ namespace CrystalFrost
                     _log.LogError($"Error disposing pooled texture: {ex.Message}");
                 }
             }
+        }
 
-            // Dispose AudioClips to prevent memory leaks
+        /// <summary>
+        /// Properly dispose all cached audio clips.
+        /// </summary>
+        private void DisposeAudioClips()
+        {
             foreach (var audioClip in sounds.Values)
             {
                 try
@@ -913,11 +1007,14 @@ namespace CrystalFrost
                     _log.LogError($"Error disposing AudioClip: {ex.Message}");
                 }
             }
+        }
 
-            // Dispose the lock
-            _materialLock?.Dispose();
-
-            _log.LogInformation("CFAssetManager disposed successfully.");
+        /// <summary>
+        /// Finalizer to ensure resources are cleaned up if Dispose is not called.
+        /// </summary>
+        ~CFAssetManager()
+        {
+            Dispose(false);
         }
     }
 }

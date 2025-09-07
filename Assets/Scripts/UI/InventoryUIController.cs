@@ -13,15 +13,20 @@ namespace CrystalFrost.UI
     public class InventoryUIController : MonoBehaviour
     {
         private ILogger<InventoryUIController> _logger;
+        private IUIStateTracker _uiStateTracker;
 
         private void Awake()
         {
             _logger = Services.GetService<ILogger<InventoryUIController>>();
+            _uiStateTracker = FindObjectOfType<UIStateTracker>();
         }
 
         public void CreateInventoryWindow()
         {
             _logger.LogInformation("Creating inventory window");
+            
+            // Track the creation process start
+            _uiStateTracker?.TrackInteraction(gameObject, "InventoryUIController", "CreateWindowStarted", null);
 
             // 1. Create Canvas
             GameObject canvasGO = new GameObject("InventoryCanvas");
@@ -30,6 +35,9 @@ namespace CrystalFrost.UI
             canvas.sortingOrder = 10;
             canvasGO.AddComponent<CanvasScaler>();
             canvasGO.AddComponent<GraphicRaycaster>();
+
+            // Track canvas creation
+            _uiStateTracker?.TrackComponentCreated(canvasGO, "InventoryCanvas");
 
             // 2. Create Window Panel
             GameObject windowPanel = CreateInventoryPanel(canvasGO.transform);
@@ -48,6 +56,9 @@ namespace CrystalFrost.UI
 
             // 6. Make window draggable
             windowPanel.AddComponent<DraggableWindow>();
+
+            // Track successful window creation
+            _uiStateTracker?.TrackInteraction(gameObject, "InventoryUIController", "CreateWindowCompleted", new { windowId = windowPanel.GetInstanceID() });
 
             _logger.LogInformation("Inventory window created successfully");
         }
@@ -76,6 +87,9 @@ namespace CrystalFrost.UI
 
             // Add header
             CreateInventoryHeader(panel.transform);
+
+            // Track panel creation
+            _uiStateTracker?.TrackComponentCreated(panel, "InventoryPanel");
 
             return panel;
         }

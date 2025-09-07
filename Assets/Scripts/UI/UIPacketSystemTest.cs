@@ -32,7 +32,7 @@ namespace CrystalFrost.UI
             try
             {
                 _uiStateTracker = FindObjectOfType<UIStateTracker>();
-                _uiPacketSender = Services.GetService<IUIPacketSender>();
+                _uiPacketSender = FindObjectOfType<UIPacketSender>();
                 _logger = Services.GetService<ILogger<UIPacketSystemTest>>();
 
                 _logger.LogInformation("UIPacketSystemTest initialized");

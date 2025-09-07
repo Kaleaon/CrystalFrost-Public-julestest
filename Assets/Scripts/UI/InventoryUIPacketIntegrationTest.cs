@@ -21,7 +21,7 @@ namespace CrystalFrost.UI
         {
             _logger = Services.GetService<ILogger<InventoryUIPacketIntegrationTest>>();
             _uiStateTracker = FindObjectOfType<UIStateTracker>();
-            _uiPacketSender = Services.GetService<IUIPacketSender>();
+            _uiPacketSender = FindObjectOfType<UIPacketSender>();
         }
         
         private void Start()

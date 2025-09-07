@@ -36,7 +36,9 @@ A serializable data structure that contains:
 
 ### UIStateTracker
 
-A MonoBehaviour service that provides methods to track UI changes:
+A MonoBehaviour service that provides methods to track UI changes. Components should find this service in the scene using `FindObjectOfType<UIStateTracker>()` rather than through dependency injection.
+
+**Key Methods:**
 - `TrackComponentCreated(GameObject, string)` - Track UI component creation
 - `TrackComponentDestroyed(string, string)` - Track UI component destruction
 - `TrackVisibilityChanged(GameObject, string, bool)` - Track visibility changes
@@ -44,9 +46,13 @@ A MonoBehaviour service that provides methods to track UI changes:
 - `TrackContentChanged(GameObject, string, object)` - Track content changes
 - `TrackInteraction(GameObject, string, string, object)` - Track user interactions
 
+**Note:** All calls should use null-safe operators (`?.`) since the tracker may not be present in the scene during testing or development.
+
 ### UIPacketSender
 
-A MonoBehaviour service that handles packet transmission:
+A MonoBehaviour service that handles packet transmission. Like UIStateTracker, this should be found in the scene rather than accessed through dependency injection.
+
+**Key Methods:**
 - `SendUIChangePacket(UIChangePacket)` - Send a single packet
 - `SendUIChangePacketBatch(List<UIChangePacket>)` - Send multiple packets as a batch
 - Automatic batching and sending at configurable intervals
@@ -128,30 +134,43 @@ The following UI components have been integrated with the packet system:
 }
 ```
 
-## Usage
+## Setup and Usage
+
+### Scene Setup
+
+The UI packet system requires two MonoBehaviour components to be present in the scene:
+
+1. **UIStateTracker** - Add this component to a GameObject in your scene
+2. **UIPacketSender** - Add this component to a GameObject in your scene (it will automatically find the UIStateTracker)
+
+These components are not registered in the dependency injection container and must be found in the scene.
 
 ### Basic Integration
 
-1. **In UI Controllers**, get the UIStateTracker service:
+1. **In UI Controllers**, find the UIStateTracker component:
 ```csharp
-private IUIStateTracker _uiStateTracker;
+private UIStateTracker _uiStateTracker;
 
 private void Start()
 {
-    _uiStateTracker = Services.GetService<IUIStateTracker>();
+    _uiStateTracker = FindObjectOfType<UIStateTracker>();
+    if (_uiStateTracker == null)
+    {
+        Debug.LogWarning("UIStateTracker not found in scene. UI tracking will be disabled.");
+    }
 }
 ```
 
-2. **Track UI Changes**:
+2. **Track UI Changes** (always use null-safe operators):
 ```csharp
 // Track component creation
-_uiStateTracker.TrackComponentCreated(myPanel, "InventoryPanel");
+_uiStateTracker?.TrackComponentCreated(myPanel, "InventoryPanel");
 
 // Track visibility changes
-_uiStateTracker.TrackVisibilityChanged(myPanel, "InventoryPanel", true);
+_uiStateTracker?.TrackVisibilityChanged(myPanel, "InventoryPanel", true);
 
 // Track user interactions
-_uiStateTracker.TrackInteraction(myButton, "LoginButton", "Click", 
+_uiStateTracker?.TrackInteraction(myButton, "LoginButton", "Click", 
     new { Username = "John.Doe" });
 ```
 

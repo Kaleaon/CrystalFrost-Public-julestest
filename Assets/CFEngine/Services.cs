@@ -227,6 +227,10 @@ namespace CrystalFrost
 			// capture logging from LibMetaverse
 			_serviceCollection.AddSingleton<ILMVLogger, LMVLogger>();
 
+			// UI State Tracking and Packet Sending Services
+			_serviceCollection.AddSingleton<CrystalFrost.UI.IUIStateTracker, CrystalFrost.UI.UIStateTracker>();
+			_serviceCollection.AddSingleton<CrystalFrost.UI.IUIPacketSender, CrystalFrost.UI.UIPacketSender>();
+
 			// add more registrations here.
 
 			_log.DIRegistrationComplete();

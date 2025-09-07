@@ -206,15 +206,26 @@ namespace CrystalFrost.Performance
         {
             try
             {
-                // Create compressed texture
+                // Use Graphics.ConvertTexture for efficient format conversion and compression if supported
                 Texture2D compressedTexture = new Texture2D(texture.width, texture.height, format, false);
-                
-                // Copy pixel data and compress
-                Color[] pixels = texture.GetPixels();
-                compressedTexture.SetPixels(pixels);
-                compressedTexture.Compress(true);
-                compressedTexture.Apply();
 
+                bool converted = false;
+#if UNITY_2018_3_OR_NEWER
+                if (SystemInfo.copyTextureSupport != CopyTextureSupport.None)
+                {
+                    Graphics.ConvertTexture(texture, compressedTexture);
+                    converted = true;
+                }
+#endif
+                if (!converted)
+                {
+                    // Fallback: inefficient method, log warning
+                    _logger.LogWarning("Using fallback SetPixels + Compress for texture compression. This is inefficient.");
+                    Color[] pixels = texture.GetPixels();
+                    compressedTexture.SetPixels(pixels);
+                    compressedTexture.Compress(true);
+                    compressedTexture.Apply();
+                }
                 // Apply optimized settings
                 compressedTexture.wrapMode = TextureWrapMode.Repeat;
                 compressedTexture.filterMode = FilterMode.Bilinear;

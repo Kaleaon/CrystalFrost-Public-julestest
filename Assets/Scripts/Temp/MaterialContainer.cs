@@ -164,44 +164,28 @@ namespace Temp
 			private void DisposeUnityResources()
 			{
 				// Destroy materials if they were instantiated
-				if (materialOpaque != null)
-				{
-					if (Application.isPlaying)
-						UnityEngine.Object.Destroy(materialOpaque);
-					else
-						UnityEngine.Object.DestroyImmediate(materialOpaque);
-					materialOpaque = null;
-				}
-
-				if (materialAlpha != null)
-				{
-					if (Application.isPlaying)
-						UnityEngine.Object.Destroy(materialAlpha);
-					else
-						UnityEngine.Object.DestroyImmediate(materialAlpha);
-					materialAlpha = null;
-				}
-
-				if (materialOpaqueFullbright != null)
-				{
-					if (Application.isPlaying)
-						UnityEngine.Object.Destroy(materialOpaqueFullbright);
-					else
-						UnityEngine.Object.DestroyImmediate(materialOpaqueFullbright);
-					materialOpaqueFullbright = null;
-				}
-
-				if (materialAlphaFullbright != null)
-				{
-					if (Application.isPlaying)
-						UnityEngine.Object.Destroy(materialAlphaFullbright);
-					else
-						UnityEngine.Object.DestroyImmediate(materialAlphaFullbright);
-					materialAlphaFullbright = null;
-				}
+				DisposeMaterial(ref materialOpaque);
+				DisposeMaterial(ref materialAlpha);
+				DisposeMaterial(ref materialOpaqueFullbright);
+				DisposeMaterial(ref materialAlphaFullbright);
 
 				// Note: We don't destroy the texture here as it might be shared
 				// The texture disposal should be handled by the texture manager
+			}
+
+			/// <summary>
+			/// Helper method to dispose a Unity material safely.
+			/// </summary>
+			private void DisposeMaterial(ref Material material)
+			{
+				if (material != null)
+				{
+					if (Application.isPlaying)
+						UnityEngine.Object.Destroy(material);
+					else
+						UnityEngine.Object.DestroyImmediate(material);
+					material = null;
+				}
 			}
 
 			/// <summary>

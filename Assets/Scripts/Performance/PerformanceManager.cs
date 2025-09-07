@@ -143,9 +143,10 @@ namespace CrystalFrost.Performance
             try
             {
                 // Memory metrics
-                _currentMetrics.TotalMemoryMB = Profiler.GetTotalAllocatedMemory(Profiler.Area.UI) / (1024 * 1024);
+                _currentMetrics.TotalMemoryMB = Profiler.GetTotalAllocatedMemoryLong() / (1024 * 1024);
                 _currentMetrics.TextureMemoryMB = Profiler.GetAllocatedMemoryForGraphicsDriver() / (1024 * 1024);
-                _currentMetrics.MeshMemoryMB = Profiler.GetTotalReservedMemory(Profiler.Area.Rendering) / (1024 * 1024);
+                // Unity does not provide a direct API for mesh memory; consider using GetAllocatedMemoryForMesh() if available.
+                _currentMetrics.MeshMemoryMB = Profiler.GetTotalReservedMemoryLong() / (1024 * 1024);
 
                 // Rendering metrics
                 _currentMetrics.DrawCalls = UnityEngine.Rendering.FrameDebugger.enabled ? 

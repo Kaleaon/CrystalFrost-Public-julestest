@@ -317,7 +317,8 @@ namespace CrystalFrost.Performance
         private void MonitorPerformance()
         {
             // Simple draw call monitoring
-            _lastFrameDrawCalls = UnityEngine.Profiling.Profiler.GetRuntimeMemorySize("Draw Calls");
+            // Unity does not provide a direct API for draw call count per frame.
+            // Use _batchedDrawCalls for monitoring batched draw calls.
             
             // Log performance metrics periodically
             if (Time.frameCount % 300 == 0) // Every 5 seconds at 60 FPS

@@ -4,6 +4,7 @@ using UnityEngine;
 using OpenMetaverse;
 using CrystalFrost.Client.Credentials;
 using CrystalFrost.Config;
+using CrystalFrost.Services;
 using Microsoft.Extensions.Logging;
 using Bunny;
 
@@ -11,12 +12,14 @@ namespace CrystalFrost.Controllers
 {
     /// <summary>
     /// Handles authentication logic including login, logout, and credential management
+    /// Uses service-based ClientManager instead of static access for better testability
     /// </summary>
     public class AuthenticationController : MonoBehaviour
     {
         private ILogger<AuthenticationController> _logger;
         private ICredentialsStore _credentials;
         private ILoginUriProvider _loginUriProvider;
+        private IClientManagerService _clientManagerService;
         private LoginCredential _currentCredential;
 
         public System.Action OnLoginSuccess;
@@ -28,6 +31,7 @@ namespace CrystalFrost.Controllers
             _logger = Services.GetService<ILogger<AuthenticationController>>();
             _loginUriProvider = Services.GetService<ILoginUriProvider>();
             _credentials = Services.GetService<ICredentialsStore>();
+            _clientManagerService = ClientManager.GetService(); // Use service instead of static access
         }
 
         public void Initialize()
@@ -68,7 +72,7 @@ namespace CrystalFrost.Controllers
             {
                 // Create login parameters - matching original constructor signature
                 LoginParams loginParams = new(
-                    ClientManager.client,
+                    _clientManagerService.Client,
                     firstName,
                     lastName, 
                     password,
@@ -77,29 +81,29 @@ namespace CrystalFrost.Controllers
                     loginUri
                 );
 
-                if (loginParams.URI != loginUri) ClientManager.isOpenSim = true;
+                if (loginParams.URI != loginUri) _clientManagerService.IsOpenSim = true;
 
                 // Perform login
-                bool loginSuccess = ClientManager.client.Network.Login(loginParams);
+                bool loginSuccess = _clientManagerService.Client.Network.Login(loginParams);
                 
                 if (loginSuccess)
                 {
-                    Console.WriteLine(System.DateTime.UtcNow.ToShortTimeString() + ": " + ClientManager.client.Network.LoginMessage);
+                    Console.WriteLine(System.DateTime.UtcNow.ToShortTimeString() + ": " + _clientManagerService.Client.Network.LoginMessage);
                     Console.WriteLine("Logging in. The viewer might appear to lock up for a short while, while the sim floods it with new objects.");
 
                     _logger.LogInformation("Login successful");
                     OnStatusUpdate?.Invoke("Login successful!");
                     
                     // Set up client state - matching original logic
-                    ClientManager.client.Network.CurrentSim.Caps.CapabilitiesReceived += ((sender, e) => {
-                        ClientManager.active = true;
+                    _clientManagerService.Client.Network.CurrentSim.Caps.CapabilitiesReceived += ((sender, e) => {
+                        _clientManagerService.Active = true;
                     });
-                    ClientManager.client.Estate.RequestInfo();
+                    _clientManagerService.Client.Estate.RequestInfo();
 
                     // Re-initialize the SimManager for the new session
-                    if (ClientManager.simManager != null)
+                    if (_clientManagerService.SimManager != null)
                     {
-                        (ClientManager.simManager as SimManager).Initialize();
+                        (_clientManagerService.SimManager as SimManager).Initialize();
                     }
 
                     // Update credential last used time
@@ -109,10 +113,10 @@ namespace CrystalFrost.Controllers
                 }
                 else
                 {
-                    Console.WriteLine(System.DateTime.UtcNow.ToShortTimeString() + ": " + ClientManager.client.Network.LoginMessage);
-                    _logger.LogError($"Login failed: {ClientManager.client.Network.LoginMessage}");
-                    OnStatusUpdate?.Invoke($"Login failed: {ClientManager.client.Network.LoginMessage}");
-                    ClientManager.active = false;
+                    Console.WriteLine(System.DateTime.UtcNow.ToShortTimeString() + ": " + _clientManagerService.Client.Network.LoginMessage);
+                    _logger.LogError($"Login failed: {_clientManagerService.Client.Network.LoginMessage}");
+                    OnStatusUpdate?.Invoke($"Login failed: {_clientManagerService.Client.Network.LoginMessage}");
+                    _clientManagerService.Active = false;
                 }
             }
             catch (Exception ex)
@@ -154,28 +158,28 @@ namespace CrystalFrost.Controllers
             try
             {
                 // Gracefully disconnect from the network
-                if (ClientManager.client != null && ClientManager.client.Network.Connected)
+                if (_clientManagerService.Client != null && _clientManagerService.Client.Network.Connected)
                 {
-                    ClientManager.client.Network.Logout();
+                    _clientManagerService.Client.Network.Logout();
                 }
 
-                ClientManager.active = false;
+                _clientManagerService.Active = false;
 
                 // Dispose managers to clean up state
-                if (ClientManager.assetManager != null)
+                if (_clientManagerService.AssetManager != null)
                 {
-                    ClientManager.assetManager.Dispose();
-                    ClientManager.assetManager = new CrystalFrost.CFAssetManager(); // Re-initialize for next session
+                    _clientManagerService.AssetManager.Dispose();
+                    _clientManagerService.AssetManager = new CrystalFrost.CFAssetManager(); // Re-initialize for next session
                 }
 
-                if (ClientManager.simManager != null)
+                if (_clientManagerService.SimManager != null)
                 {
-                    (ClientManager.simManager as SimManager).Dispose();
+                    (_clientManagerService.SimManager as SimManager).Dispose();
                 }
 
-                if (ClientManager.currentOutfitFolder != null)
+                if (_clientManagerService.CurrentOutfitFolder != null)
                 {
-                    ClientManager.currentOutfitFolder.Dispose();
+                    _clientManagerService.CurrentOutfitFolder.Dispose();
                 }
 
                 // Clean up any remaining assets

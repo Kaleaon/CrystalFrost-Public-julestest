@@ -22,7 +22,7 @@ namespace CrystalFrost.UnityRendering
 		/// <summary>
 		/// The parent GameObject that holds the hierarchy for this scene object.
 		/// </summary>
-		public GameObject HeirachyHolder;
+		public GameObject HierarchyHolder;
 
 		/// <summary>
 		/// The primary GameObject for this scene object.

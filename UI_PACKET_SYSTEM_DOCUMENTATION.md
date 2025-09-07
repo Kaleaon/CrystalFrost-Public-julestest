@@ -52,6 +52,82 @@ A MonoBehaviour service that handles packet transmission:
 - Automatic batching and sending at configurable intervals
 - Multiple transmission methods (chat messages, logging, extensible for custom protocols)
 
+## Integrated UI Components
+
+The following UI components have been integrated with the packet system:
+
+### Inventory System Integration
+
+#### InventoryWindowUI
+- **Component Creation**: Tracks when inventory windows are created
+- **Tree Population**: Tracks when the inventory tree is populated with items
+- **Folder Operations**: Tracks folder expansion/collapse with folder details
+- **Item Selection**: Tracks when inventory items are selected with item metadata
+- **Context Menu**: Tracks all context menu actions including:
+  - Wear/Take Off items
+  - Attach/Detach operations with attachment point selection
+  - Delete operations
+  - Menu opening events
+
+#### InventoryUIController
+- **Window Management**: Tracks the entire window creation process
+- **Component Creation**: Tracks creation of canvas, panels, and UI elements
+- **Creation Status**: Tracks start and completion of window creation
+
+#### InventoryUI (Simple Interface)
+- **Panel Visibility**: Tracks when inventory panels are shown/hidden
+- **Tree Population**: Tracks inventory tree population events
+- **Folder Operations**: Tracks folder expansion/collapse with depth information
+
+#### InventoryManager
+- **Outfit Management**: Tracks all outfit-related operations:
+  - Replace entire outfits with item counts and IDs
+  - Add items to outfits with replace settings
+  - Remove items from outfits
+- **Attachment Operations**: Tracks attachment/detachment with:
+  - Item details (ID, name)
+  - Attachment points
+  - Replace settings
+
+### Integration Benefits
+
+1. **Complete Inventory Tracking**: All inventory interactions are captured and transmitted
+2. **Detailed Context**: Each packet includes relevant metadata (item IDs, names, attachment points, etc.)
+3. **User Attribution**: All actions are attributed to the current logged-in user
+4. **Real-time Synchronization**: Main viewer receives immediate updates about inventory state
+5. **Hierarchical Tracking**: Tree operations include depth and folder hierarchy information
+
+### Example Inventory Packets
+
+**Inventory Window Creation:**
+```json
+{
+  "ComponentType": "InventoryWindow",
+  "ChangeType": "Created",
+  "UserContext": "John Doe",
+  "Position": {"x": 0, "y": 0, "z": 0},
+  "Size": {"x": 400, "y": 600}
+}
+```
+
+**Folder Expansion:**
+```json
+{
+  "ComponentType": "InventoryTreeNode",
+  "ChangeType": "InteractionOccurred",
+  "ChangeData": "{\"InteractionType\":\"FolderExpanded\",\"Data\":{\"folderId\":\"...\",\"folderName\":\"Clothing\",\"depth\":1}}"
+}
+```
+
+**Item Attachment:**
+```json
+{
+  "ComponentType": "InventoryManager",
+  "ChangeType": "InteractionOccurred",
+  "ChangeData": "{\"InteractionType\":\"AttachItem\",\"Data\":{\"itemId\":\"...\",\"itemName\":\"Hat\",\"attachmentPoint\":\"Skull\",\"replace\":false}}"
+}
+```
+
 ## Usage
 
 ### Basic Integration
@@ -130,6 +206,36 @@ To integrate with additional UI components:
 1. Get the UIStateTracker service in your component
 2. Call appropriate tracking methods when UI state changes
 3. Use the component type strings consistently (e.g., "InventoryWindow", "ChatPanel")
+
+## Testing
+
+### InventoryUIPacketIntegrationTest Component
+
+A comprehensive test component (`InventoryUIPacketIntegrationTest`) has been included to verify the inventory UI integration:
+
+#### Features:
+- **Automated Testing**: Can run continuously with configurable intervals
+- **Manual Testing**: Context menu options for manual test execution
+- **Packet Monitoring**: Logs successful and failed packet transmissions
+- **Component Coverage**: Tests all inventory UI components
+
+#### Manual Test Options:
+1. **Run Inventory UI Packet Test**: Simulates various inventory interactions
+2. **Test All Inventory Components**: Comprehensive test of all integrated components
+
+#### Test Coverage:
+- Inventory window creation and management
+- Tree node expansion/collapse
+- Item selection and context menu actions
+- Attachment/detachment operations
+- Outfit management operations
+
+### Testing Recommendations:
+
+1. **Enable Test Mode**: Set `enableTestMode = true` in the test component for automated testing
+2. **Monitor Logs**: Watch for packet transmission confirmations in Unity Console
+3. **Manual Testing**: Use context menu options to trigger specific test scenarios
+4. **Integration Testing**: Test with actual inventory data when connected to a grid
 
 ## Packet Format Example
 

@@ -14,6 +14,7 @@ public class InventoryWindowUI : MonoBehaviour
     public AttachmentPointSelectorUI attachmentPointSelector;
     
     private ILogger<InventoryWindowUI> _logger;
+    private IUIStateTracker _uiStateTracker;
 
     // A dictionary to keep track of the UI nodes to manage expand/collapse state
     private Dictionary<UUID, TreeNodeUI> uiNodes = new Dictionary<UUID, TreeNodeUI>();
@@ -22,8 +23,12 @@ public class InventoryWindowUI : MonoBehaviour
 
     private void Start()
     {
-        // Initialize logger
+        // Initialize logger and UI state tracker
         _logger = Services.GetService<ILogger<InventoryWindowUI>>();
+        _uiStateTracker = Services.GetService<IUIStateTracker>();
+        
+        // Track the creation of this inventory window
+        _uiStateTracker.TrackComponentCreated(gameObject, "InventoryWindow");
         
         // Subscribe to the folder update event to know when the inventory is ready
         ClientManager.client.Inventory.FolderUpdated += Inventory_FolderUpdated;
@@ -33,6 +38,13 @@ public class InventoryWindowUI : MonoBehaviour
 
     private void OnDestroy()
     {
+        // Track the destruction of this inventory window
+        if (_uiStateTracker != null)
+        {
+            string componentId = GetComponentId();
+            _uiStateTracker.TrackComponentDestroyed(componentId, "InventoryWindow");
+        }
+        
         // Always unsubscribe from events
         ClientManager.client.Inventory.FolderUpdated -= Inventory_FolderUpdated;
     }
@@ -47,6 +59,9 @@ public class InventoryWindowUI : MonoBehaviour
 
             // Now it's safe to populate the tree
             PopulateTree(ClientManager.client.Inventory.Store.RootFolder, contentRoot, 0);
+            
+            // Track that the inventory tree has been populated
+            _uiStateTracker.TrackContentChanged(gameObject, "InventoryWindow", new { action = "TreePopulated", rootFolderId = e.FolderID.ToString() });
         }
     }
 
@@ -95,11 +110,17 @@ public class InventoryWindowUI : MonoBehaviour
                     child.SetActive(true);
                 }
             }
+            
+            // Track folder expansion
+            _uiStateTracker.TrackInteraction(nodeUI.gameObject, "InventoryTreeNode", "FolderExpanded", new { folderId = folder.UUID.ToString(), folderName = folder.Name, depth });
         }
         else
         {
             // If it's collapsed, hide all descendants
             HideChildren(folder.UUID);
+            
+            // Track folder collapse
+            _uiStateTracker.TrackInteraction(nodeUI.gameObject, "InventoryTreeNode", "FolderCollapsed", new { folderId = folder.UUID.ToString(), folderName = folder.Name, depth });
         }
     }
 
@@ -122,15 +143,22 @@ public class InventoryWindowUI : MonoBehaviour
 
     public void ShowContextMenu(InventoryBase item, Vector2 position)
     {
+        // Track that context menu was opened
+        _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "MenuOpened", new { itemId = item.UUID.ToString(), itemName = item.Name, itemType = item.GetType().Name, position });
+        
         contextMenu.ClearButtons();
 
         // Add actions based on item type
         if (item is InventoryWearable || item is InventoryAttachment)
         {
             contextMenu.AddButton("Wear", () => {
+                // Track wear action
+                _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "WearItem", new { itemId = item.UUID.ToString(), itemName = item.Name });
                 ClientManager.client.Appearance.AddToOutfit(new List<InventoryItem> { (InventoryItem)item }, true);
             });
             contextMenu.AddButton("Take Off", () => {
+                // Track take off action
+                _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "TakeOffItem", new { itemId = item.UUID.ToString(), itemName = item.Name });
                 ClientManager.client.Appearance.RemoveFromOutfit(new List<InventoryItem> { (InventoryItem)item });
             });
         }
@@ -139,11 +167,17 @@ public class InventoryWindowUI : MonoBehaviour
         {
             // Comprehensive attachment functionality with point selection
             contextMenu.AddButton("Attach To...", () => {
+                // Track attachment dialog opening
+                _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "AttachDialogOpened", new { itemId = item.UUID.ToString(), itemName = item.Name });
+                
                 if (attachmentPointSelector != null)
                 {
                     attachmentPointSelector.Show((InventoryItem)item, (attachmentPoint) => {
                         try
                         {
+                            // Track attachment action
+                            _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "AttachItem", new { itemId = item.UUID.ToString(), itemName = item.Name, attachmentPoint = attachmentPoint.ToString() });
+                            
                             ClientManager.client.Objects.AttachObject(
                                 ClientManager.client.Network.CurrentSim,
                                 ((InventoryItem)item).UUID,
@@ -168,6 +202,9 @@ public class InventoryWindowUI : MonoBehaviour
             contextMenu.AddButton("Detach", () => {
                 try
                 {
+                    // Track detach action
+                    _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "DetachItem", new { itemId = item.UUID.ToString(), itemName = item.Name });
+                    
                     ClientManager.client.Appearance.Detach((InventoryItem)item);
                     _logger.LogInformation($"Detached {item.Name}");
                 }
@@ -180,6 +217,8 @@ public class InventoryWindowUI : MonoBehaviour
 
         // Add more general actions
         contextMenu.AddButton("Delete", () => {
+            // Track delete action
+            _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "DeleteItem", new { itemId = item.UUID.ToString(), itemName = item.Name });
             ClientManager.client.Inventory.Remove(item.UUID, null);
         });
 
@@ -204,11 +243,27 @@ public class InventoryWindowUI : MonoBehaviour
             selectedNode = node;
             node.SetSelected(true);
             
+            // Track item selection
+            var itemData = node.GetItemData();
+            _uiStateTracker.TrackInteraction(node.gameObject, "InventoryTreeNode", "ItemSelected", new { 
+                itemId = itemData.UUID.ToString(), 
+                itemName = itemData.Name, 
+                itemType = itemData.GetType().Name 
+            });
+            
             _logger.LogDebug($"Selected inventory item: {node.GetItemData().Name}");
         }
         catch (System.Exception ex)
         {
             _logger.LogError(ex, "Error selecting inventory item");
         }
+    }
+    
+    /// <summary>
+    /// Get a unique component identifier for this window
+    /// </summary>
+    private string GetComponentId()
+    {
+        return $"InventoryWindow_{gameObject.GetInstanceID()}";
     }
 }

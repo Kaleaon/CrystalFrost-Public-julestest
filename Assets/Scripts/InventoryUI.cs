@@ -1,6 +1,10 @@
 using UnityEngine;
+using UnityEngine.UI;
 using OpenMetaverse;
 using System.Collections.Generic;
+using CrystalFrost.UI;
+using Microsoft.Extensions.Logging;
+using CrystalFrost;
 
 public class InventoryUI : MonoBehaviour
 {
@@ -11,13 +15,28 @@ public class InventoryUI : MonoBehaviour
     private bool isPopulated = false;
     private HashSet<UUID> expandedFolders = new HashSet<UUID>();
     private Dictionary<UUID, GameObject> inventoryEntries = new Dictionary<UUID, GameObject>();
+    
+    private ILogger<InventoryUI> _logger;
+    private IUIStateTracker _uiStateTracker;
+    
+    private void Awake()
+    {
+        _logger = Services.GetService<ILogger<InventoryUI>>();
+        _uiStateTracker = Services.GetService<IUIStateTracker>();
+    }
 
     public void TogglePanel()
     {
         if (InventoryPanel != null)
         {
-            InventoryPanel.SetActive(!InventoryPanel.activeSelf);
-            if (InventoryPanel.activeSelf && !isPopulated)
+            bool wasActive = InventoryPanel.activeSelf;
+            bool newState = !wasActive;
+            InventoryPanel.SetActive(newState);
+            
+            // Track visibility change
+            _uiStateTracker.TrackVisibilityChanged(InventoryPanel, "InventoryPanel", newState);
+            
+            if (newState && !isPopulated)
             {
                 PopulateInventory();
             }
@@ -26,6 +45,9 @@ public class InventoryUI : MonoBehaviour
 
     public void PopulateInventory()
     {
+        // Track population start
+        _uiStateTracker.TrackInteraction(gameObject, "InventoryUI", "PopulateStarted", null);
+        
         // Clear existing entries
         foreach (Transform child in Content)
         {
@@ -35,6 +57,9 @@ public class InventoryUI : MonoBehaviour
         InventoryFolder rootFolder = ClientManager.client.Inventory.Store.RootFolder;
         CreateInventoryEntries(rootFolder, 0);
         isPopulated = true;
+        
+        // Track population completion
+        _uiStateTracker.TrackContentChanged(gameObject, "InventoryUI", new { action = "PopulateCompleted", entryCount = inventoryEntries.Count });
     }
 
     void CreateInventoryEntries(InventoryFolder parentFolder, int depth)
@@ -72,12 +97,18 @@ public class InventoryUI : MonoBehaviour
             // Collapse
             expandedFolders.Remove(folder.UUID);
             CollapseFolder(folder);
+            
+            // Track folder collapse
+            _uiStateTracker.TrackInteraction(inventoryEntries[folder.UUID], "InventoryEntry", "FolderCollapsed", new { folderId = folder.UUID.ToString(), folderName = folder.Name });
         }
         else
         {
             // Expand
             expandedFolders.Add(folder.UUID);
             CreateInventoryEntries(folder, GetDepth(folder) + 1);
+            
+            // Track folder expansion
+            _uiStateTracker.TrackInteraction(inventoryEntries[folder.UUID], "InventoryEntry", "FolderExpanded", new { folderId = folder.UUID.ToString(), folderName = folder.Name });
         }
     }
 

@@ -23,6 +23,10 @@ using Unity.VisualScripting;
 
 namespace CrystalFrost
 {
+	/// <summary>
+	/// Manages asset caching, texture processing, and material creation for the Crystal Frost viewer.
+	/// Implements proper disposal patterns to prevent memory leaks.
+	/// </summary>
 	public class CFAssetManager : IDisposable
 	{
 		//it's faster to multiply by this than to divide by 255
@@ -34,6 +38,12 @@ namespace CrystalFrost
 		private readonly IAssetManager _assetManager;
 		private readonly ITransformTexCoords _transformTextureCoords;
 		private readonly ILogger<CFAssetManager> _log;
+
+		/// <summary>
+		/// Pool of white textures to reduce instantiation overhead.
+		/// </summary>
+		private readonly Queue<Texture2D> _whiteTexturePool = new Queue<Texture2D>();
+		private const int MaxPoolSize = 100; // Limit pool size to prevent excessive memory usage
 
 		public CFAssetManager()
 		{
@@ -66,6 +76,44 @@ namespace CrystalFrost
 		public Material zeroMaterial;
 
 		public Dictionary<UUID, MaterialContainer> materialContainer = new();
+
+		/// <summary>
+		/// Gets a white texture from the pool or creates a new one if the pool is empty.
+		/// This reduces garbage collection pressure from repeated texture instantiation.
+		/// </summary>
+		/// <returns>A white texture instance</returns>
+		private Texture2D GetPooledWhiteTexture()
+		{
+			if (_whiteTexturePool.Count > 0)
+			{
+				return _whiteTexturePool.Dequeue();
+			}
+
+			// Create new texture if pool is empty
+			return Texture2D.Instantiate(Texture2D.whiteTexture);
+		}
+
+		/// <summary>
+		/// Returns a white texture to the pool for reuse, if the pool isn't full.
+		/// </summary>
+		/// <param name="texture">The texture to return to the pool</param>
+		private void ReturnTextureToPool(Texture2D texture)
+		{
+			if (texture == null) return;
+
+			if (_whiteTexturePool.Count < MaxPoolSize)
+			{
+				_whiteTexturePool.Enqueue(texture);
+			}
+			else
+			{
+				// Pool is full, destroy the texture
+				if (Application.isPlaying)
+					UnityEngine.Object.Destroy(texture);
+				else
+					UnityEngine.Object.DestroyImmediate(texture);
+			}
+		}
 
 		//request non-fullbright texture from the server
 		/*		public void RequestTexture(UUID uuid, Renderer rendr, Color color, float glow, bool fullbright)
@@ -103,10 +151,27 @@ namespace CrystalFrost
 					_assetManager.Textures.RequestImage(uuid);
 				}*/
 
+		/// <summary>
+		/// Requests a texture for rendering on a specific submesh of a renderer.
+		/// Uses texture pooling to reduce memory allocation overhead.
+		/// </summary>
+		/// <param name="uuid">The UUID of the texture to request</param>
+		/// <param name="rendr">The renderer to apply the texture to</param>
+		/// <param name="subMeshIndex">The submesh index to apply the material to</param>
+		/// <param name="color">The color tint to apply</param>
+		/// <param name="glow">The glow intensity</param>
+		/// <param name="fullbright">Whether the material should be fullbright</param>
+		/// <returns>The created or cached material</returns>
 		public Material RequestTexture(UUID uuid, Renderer rendr, int subMeshIndex, Color color, float glow, bool fullbright)
 		{
-
 			if (uuid == UUID.Zero) return null;
+
+			// Validate renderer is not null or destroyed
+			if (rendr == null || rendr.gameObject == null)
+			{
+				_log.LogWarning("RequestTexture called with null or destroyed renderer");
+				return null;
+			}
 
 			if (!materials.ContainsKey(uuid))
 			{
@@ -118,20 +183,33 @@ namespace CrystalFrost
 				materials[uuid].Add(rendr);
 			}
 
-			// DissolveIn dis = rendr.gameObject.GetComponent<DissolveIn>();
-
 			if (!materialContainer.ContainsKey(uuid))
 			{
-				materialContainer.Add(uuid, new MaterialContainer(uuid, Texture2D.Instantiate(Texture2D.whiteTexture), 3));
+				// Use pooled texture instead of direct instantiation
+				Texture2D pooledTexture = GetPooledWhiteTexture();
+				materialContainer.Add(uuid, new MaterialContainer(uuid, pooledTexture, 3));
 			}
-			Material newMaterial = newMaterial = materialContainer[uuid].GetMaterial(color, glow, fullbright);
 
-			// Apply the new material to the specific submesh
-			Material[] mats = rendr.materials;
-			if (subMeshIndex < mats.Length)
+			Material newMaterial = materialContainer[uuid].GetMaterial(color, glow, fullbright);
+
+			// Apply the new material to the specific submesh with bounds checking
+			try
 			{
-				mats[subMeshIndex] = newMaterial;
-				rendr.materials = mats;
+				Material[] mats = rendr.materials;
+				if (subMeshIndex >= 0 && subMeshIndex < mats.Length)
+				{
+					mats[subMeshIndex] = newMaterial;
+					rendr.materials = mats;
+				}
+				else
+				{
+					_log.LogWarning($"SubMesh index {subMeshIndex} out of bounds for renderer with {mats.Length} materials");
+				}
+			}
+			catch (Exception ex)
+			{
+				_log.LogError($"Error applying material to renderer: {ex.Message}");
+				return null;
 			}
 
 			if (!materialContainer[uuid].ready)
@@ -145,23 +223,30 @@ namespace CrystalFrost
 		}
 
 
-		//request terrain texture from the server
+		/// <summary>
+		/// Requests a texture for terrain rendering.
+		/// Uses texture pooling to reduce memory allocation overhead.
+		/// </summary>
+		/// <param name="uuid">The UUID of the texture to request</param>
+		/// <returns>The texture for terrain rendering</returns>
 		public Texture2D RequestTexture(UUID uuid)
 		{
-			if (uuid == UUID.Zero) return materialContainer[uuid].texture;
-			if (!materials.ContainsKey(uuid)) materials.Add(uuid, new List<Renderer>());
-			//materials[uuid].Add(rendr);
-			//Don't bother requesting a texture if it's already cached in memory;
+			if (uuid == UUID.Zero) return null;
+
+			if (!materials.ContainsKey(uuid)) 
+				materials.Add(uuid, new List<Renderer>());
+
+			// Check if texture is already cached
 			if (materialContainer.ContainsKey(uuid))
 			{
 				return materialContainer[uuid].texture;
 			}
-			else
-			{
-				materialContainer.Add(uuid, new MaterialContainer(uuid, Texture2D.Instantiate(Texture2D.whiteTexture), 3));
-				//return materialContainer[uuid].GetMaterial();
-			}
 
+			// Use pooled texture instead of direct instantiation
+			Texture2D pooledTexture = GetPooledWhiteTexture();
+			materialContainer.Add(uuid, new MaterialContainer(uuid, pooledTexture, 3));
+
+			// Request the actual texture data
 			_assetManager.Textures.RequestImage(uuid);
 
 			return materialContainer[uuid].texture;
@@ -342,8 +427,47 @@ namespace CrystalFrost
 
 		private readonly ConcurrentDictionary<UUID, List<SculptData>> requestedMeshes = new();
 
+        /// <summary>
+        /// Disposes of all assets and clears caches to prevent memory leaks.
+        /// This should be called when logging out or switching grids.
+        /// </summary>
         public void Dispose()
         {
+            _log.LogInformation("CFAssetManager disposing resources...");
+
+            // Dispose all MaterialContainer instances to prevent memory leaks
+            foreach (var container in materialContainer.Values)
+            {
+                try
+                {
+                    container?.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError($"Error disposing MaterialContainer: {ex.Message}");
+                }
+            }
+
+            // Dispose pooled textures
+            while (_whiteTexturePool.Count > 0)
+            {
+                var texture = _whiteTexturePool.Dequeue();
+                try
+                {
+                    if (texture != null)
+                    {
+                        if (Application.isPlaying)
+                            UnityEngine.Object.Destroy(texture);
+                        else
+                            UnityEngine.Object.DestroyImmediate(texture);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError($"Error disposing pooled texture: {ex.Message}");
+                }
+            }
+
             // Clear all caches and collections
             concurrentMeshQueue = new ConcurrentQueue<MeshQueueItem>();
             meshCache.Clear();
@@ -354,8 +478,32 @@ namespace CrystalFrost
             materialContainer.Clear();
             requestedMeshes.Clear();
 
-            // Any other cleanup logic for this manager would go here
-            _log.LogInformation("CFAssetManager disposed.");
+            // Dispose AudioClips to prevent memory leaks
+            foreach (var audioClip in sounds.Values)
+            {
+                try
+                {
+                    if (audioClip != null)
+                    {
+                        if (Application.isPlaying)
+                            UnityEngine.Object.Destroy(audioClip);
+                        else
+                            UnityEngine.Object.DestroyImmediate(audioClip);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError($"Error disposing AudioClip: {ex.Message}");
+                }
+            }
+
+            // Clear renderer lists to prevent holding references to destroyed objects
+            foreach (var rendererList in materials.Values)
+            {
+                rendererList.Clear();
+            }
+
+            _log.LogInformation("CFAssetManager disposed successfully.");
         }
     }
 }

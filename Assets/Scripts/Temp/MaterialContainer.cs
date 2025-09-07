@@ -7,8 +7,11 @@ using Material = UnityEngine.Material;
 // we need to run with game object and use mesh renderer to change property block
 namespace Temp
 {
-	
-		public class MaterialContainer
+	/// <summary>
+	/// Container for managing materials and textures with proper disposal pattern.
+	/// Implements IDisposable to prevent memory leaks from Unity resources.
+	/// </summary>
+	public class MaterialContainer : IDisposable
 		{
 			public bool ready = false;
 			public Material materialOpaque;
@@ -124,6 +127,92 @@ namespace Temp
 				this.texture = texture;
 				this.components = components;
 			}
+
+			#region IDisposable Implementation
+
+			private bool _disposed = false;
+
+			/// <summary>
+			/// Disposes of Unity resources to prevent memory leaks.
+			/// </summary>
+			public void Dispose()
+			{
+				Dispose(true);
+				GC.SuppressFinalize(this);
+			}
+
+			/// <summary>
+			/// Protected dispose method following standard disposal pattern.
+			/// </summary>
+			/// <param name="disposing">True if disposing from Dispose(), false if from finalizer</param>
+			protected virtual void Dispose(bool disposing)
+			{
+				if (_disposed) return;
+
+				if (disposing)
+				{
+					// Dispose managed resources
+					DisposeUnityResources();
+				}
+
+				_disposed = true;
+			}
+
+			/// <summary>
+			/// Properly dispose Unity materials and textures to prevent memory leaks.
+			/// </summary>
+			private void DisposeUnityResources()
+			{
+				// Destroy materials if they were instantiated
+				if (materialOpaque != null)
+				{
+					if (Application.isPlaying)
+						UnityEngine.Object.Destroy(materialOpaque);
+					else
+						UnityEngine.Object.DestroyImmediate(materialOpaque);
+					materialOpaque = null;
+				}
+
+				if (materialAlpha != null)
+				{
+					if (Application.isPlaying)
+						UnityEngine.Object.Destroy(materialAlpha);
+					else
+						UnityEngine.Object.DestroyImmediate(materialAlpha);
+					materialAlpha = null;
+				}
+
+				if (materialOpaqueFullbright != null)
+				{
+					if (Application.isPlaying)
+						UnityEngine.Object.Destroy(materialOpaqueFullbright);
+					else
+						UnityEngine.Object.DestroyImmediate(materialOpaqueFullbright);
+					materialOpaqueFullbright = null;
+				}
+
+				if (materialAlphaFullbright != null)
+				{
+					if (Application.isPlaying)
+						UnityEngine.Object.Destroy(materialAlphaFullbright);
+					else
+						UnityEngine.Object.DestroyImmediate(materialAlphaFullbright);
+					materialAlphaFullbright = null;
+				}
+
+				// Note: We don't destroy the texture here as it might be shared
+				// The texture disposal should be handled by the texture manager
+			}
+
+			/// <summary>
+			/// Finalizer to ensure resources are cleaned up if Dispose is not called.
+			/// </summary>
+			~MaterialContainer()
+			{
+				Dispose(false);
+			}
+
+			#endregion
 		}
 
 }

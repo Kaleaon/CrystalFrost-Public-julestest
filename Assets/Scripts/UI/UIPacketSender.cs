@@ -86,33 +86,46 @@ namespace CrystalFrost.UI
         /// </summary>
         private void StartAutomaticSending()
         {
-            InvokeRepeating(nameof(SendPendingChangesBatch), batchSendInterval, batchSendInterval);
+            StartCoroutine(SendPendingChangesBatchCoroutine());
             _logger.LogInformation($"Started automatic UI packet sending with interval: {batchSendInterval}s");
         }
 
         /// <summary>
         /// Send pending changes as a batch (called automatically if enabled)
         /// </summary>
-        private async void SendPendingChangesBatch()
+        private IEnumerator SendPendingChangesBatchCoroutine()
         {
-            try
+            while (true)
             {
-                var pendingChanges = _uiStateTracker.GetPendingChanges();
-                if (pendingChanges.Count > 0)
+                try
                 {
-                    // Limit batch size
-                    if (pendingChanges.Count > maxBatchSize)
+                    var pendingChanges = _uiStateTracker.GetPendingChanges();
+                    if (pendingChanges.Count > 0)
                     {
-                        pendingChanges = pendingChanges.GetRange(0, maxBatchSize);
-                        _logger.LogWarning($"UI change batch size limited to {maxBatchSize}. Some changes will be sent in the next batch.");
-                    }
+                        // Limit batch size
+                        if (pendingChanges.Count > maxBatchSize)
+                        {
+                            pendingChanges = pendingChanges.GetRange(0, maxBatchSize);
+                            _logger.LogWarning($"UI change batch size limited to {maxBatchSize}. Some changes will be sent in the next batch.");
+                        }
 
-                    await SendUIChangePacketBatch(pendingChanges);
+                        var sendTask = SendUIChangePacketBatch(pendingChanges);
+                        while (!sendTask.IsCompleted)
+                        {
+                            yield return null;
+                        }
+                        // Optionally handle exceptions from the task
+                        if (sendTask.IsFaulted)
+                        {
+                            _logger.LogError(sendTask.Exception, "Error sending pending UI changes batch");
+                        }
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error sending pending UI changes batch");
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error sending pending UI changes batch");
+                }
+                yield return new WaitForSeconds(batchSendInterval);
             }
         }
 

@@ -792,8 +792,8 @@ public class SimManager : MonoBehaviour, IDisposable
 #if USE_FUNLY_SKY
         timeOfDayController.skyTime = Mathf.Repeat((sunPhase * 0.15915494309189533576888376337251f) + 0.25f, 1f);
 #else
-		// TODO - Generic Sun Movement
-		//sun.transform.forward = ClientManager.client.Grid.SunDirection.ToVector3();
+		// Generic Sun Movement for non-Funly Sky setups
+		UpdateSunPosition(sunPhase);
 #endif
 
 		//TranslateObjects(t);
@@ -802,6 +802,141 @@ public class SimManager : MonoBehaviour, IDisposable
 		{
 			ServiceNewObjectQueue();
 			ServiceSceneObjectsNeedingRenderersQueue();
+		}
+	}
+
+	/// <summary>
+	/// Updates sun position and lighting based on grid sun phase and direction
+	/// </summary>
+	/// <param name="sunPhase">Current sun phase from the grid (0-1)</param>
+	private void UpdateSunPosition(float sunPhase)
+	{
+		try
+		{
+			// Find or create the main directional light (sun)
+			Light sunLight = null;
+			GameObject sunGO = GameObject.Find("Sun") ?? GameObject.Find("Directional Light");
+			
+			if (sunGO == null)
+			{
+				// Create a new sun if none exists
+				sunGO = new GameObject("Sun");
+				sunLight = sunGO.AddComponent<Light>();
+				sunLight.type = LightType.Directional;
+				sunLight.shadows = LightShadows.Soft;
+			}
+			else
+			{
+				sunLight = sunGO.GetComponent<Light>();
+				if (sunLight == null)
+				{
+					sunLight = sunGO.AddComponent<Light>();
+					sunLight.type = LightType.Directional;
+				}
+			}
+
+			// Calculate sun direction based on sun phase
+			// sunPhase goes from 0 (midnight) to 1 (next midnight)
+			// 0.25 = sunrise, 0.5 = noon, 0.75 = sunset
+			float sunAngle = sunPhase * 360f - 90f; // Convert to degrees, -90 to start at sunrise
+			
+			// Use grid sun direction if available, otherwise calculate
+			Vector3 sunDirection;
+			if (ClientManager.client?.Grid?.SunDirection != null)
+			{
+				sunDirection = ClientManager.client.Grid.SunDirection.ToVector3();
+			}
+			else
+			{
+				// Calculate sun direction based on time of day
+				float elevation = Mathf.Sin(sunPhase * 2f * Mathf.PI) * 60f; // Max 60 degrees elevation
+				float azimuth = sunAngle;
+				
+				// Convert spherical coordinates to direction vector
+				float elevationRad = elevation * Mathf.Deg2Rad;
+				float azimuthRad = azimuth * Mathf.Deg2Rad;
+				
+				sunDirection = new Vector3(
+					Mathf.Sin(azimuthRad) * Mathf.Cos(elevationRad),
+					Mathf.Sin(elevationRad),
+					Mathf.Cos(azimuthRad) * Mathf.Cos(elevationRad)
+				);
+			}
+
+			// Apply sun direction
+			sunGO.transform.rotation = Quaternion.LookRotation(sunDirection);
+
+			// Adjust sun intensity based on time of day
+			float sunIntensity = CalculateSunIntensity(sunPhase);
+			sunLight.intensity = sunIntensity;
+
+			// Adjust sun color based on time of day
+			Color sunColor = CalculateSunColor(sunPhase);
+			sunLight.color = sunColor;
+
+			// Update ambient lighting
+			RenderSettings.ambientIntensity = Mathf.Clamp01(sunIntensity * 0.3f + 0.2f);
+			RenderSettings.ambientSkyColor = Color.Lerp(Color.black, sunColor, sunIntensity);
+
+			// Update fog color to match lighting
+			if (RenderSettings.fog)
+			{
+				RenderSettings.fogColor = Color.Lerp(Color.black, sunColor * 0.8f, sunIntensity);
+			}
+
+			_log.LogDebug($"Updated sun position - Phase: {sunPhase:F3}, Intensity: {sunIntensity:F2}, Direction: {sunDirection}");
+		}
+		catch (Exception ex)
+		{
+			_log.LogError(ex, "Failed to update sun position");
+		}
+	}
+
+	/// <summary>
+	/// Calculates sun intensity based on time of day
+	/// </summary>
+	private float CalculateSunIntensity(float sunPhase)
+	{
+		// Convert sun phase to time of day (0 = midnight, 0.5 = noon)
+		float timeOfDay = sunPhase;
+		
+		// Create intensity curve: dim at night, bright during day
+		if (timeOfDay < 0.2f || timeOfDay > 0.8f) // Night time (8 PM to 4 AM)
+		{
+			return 0.1f; // Very dim moonlight
+		}
+		else if (timeOfDay < 0.3f || timeOfDay > 0.7f) // Dawn/Dusk (4-6 AM, 6-8 PM)
+		{
+			float dawnDuskFactor = timeOfDay < 0.3f ? 
+				(timeOfDay - 0.2f) / 0.1f : // Dawn: 0.2 to 0.3
+				(0.8f - timeOfDay) / 0.1f;  // Dusk: 0.7 to 0.8
+			return Mathf.Lerp(0.1f, 1.0f, dawnDuskFactor);
+		}
+		else // Day time (6 AM to 6 PM)
+		{
+			return 1.0f; // Full intensity
+		}
+	}
+
+	/// <summary>
+	/// Calculates sun color based on time of day
+	/// </summary>
+	private Color CalculateSunColor(float sunPhase)
+	{
+		float timeOfDay = sunPhase;
+		
+		if (timeOfDay < 0.2f || timeOfDay > 0.8f) // Night
+		{
+			return new Color(0.7f, 0.8f, 1.0f, 1f); // Cool blue moonlight
+		}
+		else if (timeOfDay < 0.3f || timeOfDay > 0.7f) // Dawn/Dusk
+		{
+			// Warm orange/red colors for sunrise/sunset
+			return new Color(1.0f, 0.6f, 0.3f, 1f);
+		}
+		else // Day
+		{
+			return new Color(1.0f, 0.95f, 0.8f, 1f); // Warm white daylight
 		}
 	}
 
@@ -1286,19 +1421,139 @@ public class SimManager : MonoBehaviour, IDisposable
 				// Doesn't seem we can do anything with this.
 				break;
 			case PrimType.Sculpt:
-				// TODO RequestSculpt()
+				RequestSculptForObject(obj);
 				break;
 			case PrimType.Mesh:
-				// TODO RequestMesh()
+				RequestMeshForObject(obj);
 				break;
 			default:
-				// TODO RequestGeneratedMesh()
+				RequestGeneratedMeshForObject(obj);
 				break;
 		}
 
-		// TODO Setup Lights
+		// Setup Lights
+		SetupLights(obj);
 
-		// TODO Setup Particles.
+		// Setup Particles
+		SetupParticles(obj);
+	}
+
+	/// <summary>
+	/// Requests sculpt data for an object
+	/// </summary>
+	private void RequestSculptForObject(SceneObject obj)
+	{
+		try
+		{
+			if (obj.GameObject != null && obj.SimObject != null)
+			{
+				_assetManager.RequestSculpt(obj.GameObject, obj.SimObject);
+				_log.LogDebug($"Requested sculpt for object {obj.LocalID}");
+			}
+		}
+		catch (Exception ex)
+		{
+			_log.LogError(ex, $"Failed to request sculpt for object {obj.LocalID}");
+		}
+	}
+
+	/// <summary>
+	/// Requests mesh data for an object
+	/// </summary>
+	private void RequestMeshForObject(SceneObject obj)
+	{
+		try
+		{
+			if (obj.GameObject != null && obj.SimObject != null && obj.SimObject.Sculpt != null)
+			{
+				// Create mesh holder if it doesn't exist
+				GameObject meshHolder = obj.GameObject.transform.Find("MeshHolder")?.gameObject;
+				if (meshHolder == null)
+				{
+					meshHolder = new GameObject("MeshHolder");
+					meshHolder.transform.SetParent(obj.GameObject.transform);
+					meshHolder.transform.localPosition = Vector3.zero;
+					meshHolder.transform.localRotation = Quaternion.identity;
+					meshHolder.transform.localScale = Vector3.one;
+				}
+
+				_assetManager.RequestMesh2(obj.GameObject, obj.SimObject, obj.SimObject.Sculpt.SculptTexture, meshHolder);
+				_log.LogDebug($"Requested mesh for object {obj.LocalID} with texture {obj.SimObject.Sculpt.SculptTexture}");
+			}
+		}
+		catch (Exception ex)
+		{
+			_log.LogError(ex, $"Failed to request mesh for object {obj.LocalID}");
+		}
+	}
+
+	/// <summary>
+	/// Requests generated mesh for standard primitives
+	/// </summary>
+	private void RequestGeneratedMeshForObject(SceneObject obj)
+	{
+		try
+		{
+			if (obj.GameObject != null && obj.SimObject != null)
+			{
+				// For standard primitives, we can generate the mesh based on the primitive type
+				meshObjectManager.SetupGeneratedMesh(obj.GameObject, obj.SimObject);
+				_log.LogDebug($"Requested generated mesh for primitive type {obj.SimObject.PrimType} (object {obj.LocalID})");
+			}
+		}
+		catch (Exception ex)
+		{
+			_log.LogError(ex, $"Failed to request generated mesh for object {obj.LocalID}");
+		}
+	}
+
+	/// <summary>
+	/// Sets up lighting for an object
+	/// </summary>
+	private void SetupLights(SceneObject obj)
+	{
+		try
+		{
+			if (obj.SimObject?.Light != null && obj.SimObject.Light.Intensity > 0)
+			{
+				GameObject lightGO = obj.GameObject.transform.Find("Light")?.gameObject;
+				if (lightGO == null)
+				{
+					lightGO = new GameObject("Light");
+					lightGO.transform.SetParent(obj.GameObject.transform);
+					lightGO.transform.localPosition = Vector3.zero;
+				}
+
+				Light lightComponent = lightGO.GetComponent<Light>() ?? lightGO.AddComponent<Light>();
+				
+				// Configure light based on OpenMetaverse Light properties
+				lightComponent.color = new Color(
+					obj.SimObject.Light.Color.R,
+					obj.SimObject.Light.Color.G,
+					obj.SimObject.Light.Color.B,
+					1f
+				);
+				lightComponent.intensity = obj.SimObject.Light.Intensity;
+				lightComponent.range = obj.SimObject.Light.Radius;
+				lightComponent.shadows = LightShadows.Soft;
+				
+				// Determine light type based on properties
+				if (obj.SimObject.Light.Falloff > 0)
+				{
+					lightComponent.type = LightType.Point;
+				}
+				else
+				{
+					lightComponent.type = LightType.Directional;
+				}
+
+				_log.LogDebug($"Setup light for object {obj.LocalID} - Intensity: {obj.SimObject.Light.Intensity}, Range: {obj.SimObject.Light.Radius}");
+			}
+		}
+		catch (Exception ex)
+		{
+			_log.LogError(ex, $"Failed to setup lights for object {obj.LocalID}");
+		}
 	}
 
 	/// <summary>
@@ -1350,10 +1605,147 @@ public class SimManager : MonoBehaviour, IDisposable
 	private void SetupParticles(SceneObject sceneObject)
 	{
 		if (sceneObject.SimObject.ParticleSystem.Pattern == Primitive.ParticleSystem.SourcePattern.None) return;
-		// TODO - Kage
-		//	UnityEngine.ParticleSystem ps = spd.obj.AddComponent<UnityEngine.ParticleSystem>();
-		//	spd.SetupParticles();
-		_log.LogDebug(nameof(SetupParticles) + " not implemented.");
+		
+		try
+		{
+			GameObject particleGO = sceneObject.GameObject.transform.Find("ParticleSystem")?.gameObject;
+			if (particleGO == null)
+			{
+				particleGO = new GameObject("ParticleSystem");
+				particleGO.transform.SetParent(sceneObject.GameObject.transform);
+				particleGO.transform.localPosition = Vector3.zero;
+			}
+
+			ParticleSystem ps = particleGO.GetComponent<ParticleSystem>() ?? particleGO.AddComponent<ParticleSystem>();
+			var particleData = sceneObject.SimObject.ParticleSystem;
+
+			// Configure main module
+			var main = ps.main;
+			main.startLifetime = particleData.PartMaxAge;
+			main.startSpeed = particleData.PartStartVelocity.ToVector3().magnitude;
+			main.startSize = new ParticleSystem.MinMaxCurve(particleData.PartStartScaleX, particleData.PartStartScaleY);
+			main.startColor = new Color(
+				particleData.PartStartColor.R,
+				particleData.PartStartColor.G,
+				particleData.PartStartColor.B,
+				particleData.PartStartColor.A
+			);
+			main.maxParticles = (int)particleData.MaxCount;
+
+			// Configure emission module
+			var emission = ps.emission;
+			emission.enabled = true;
+			emission.rateOverTime = particleData.BurstRate;
+
+			// Configure shape module based on pattern
+			var shape = ps.shape;
+			shape.enabled = true;
+			
+			switch (particleData.Pattern)
+			{
+				case Primitive.ParticleSystem.SourcePattern.Drop:
+					shape.shapeType = ParticleSystemShapeType.Sphere;
+					shape.radius = 0.1f;
+					break;
+				case Primitive.ParticleSystem.SourcePattern.Explode:
+					shape.shapeType = ParticleSystemShapeType.Sphere;
+					shape.radius = particleData.BurstRadius;
+					break;
+				case Primitive.ParticleSystem.SourcePattern.Angle:
+					shape.shapeType = ParticleSystemShapeType.Cone;
+					shape.angle = particleData.InnerAngle * Mathf.Rad2Deg;
+					break;
+				case Primitive.ParticleSystem.SourcePattern.AngleCone:
+					shape.shapeType = ParticleSystemShapeType.Cone;
+					shape.angle = particleData.OuterAngle * Mathf.Rad2Deg;
+					break;
+				default:
+					shape.shapeType = ParticleSystemShapeType.Sphere;
+					shape.radius = 1f;
+					break;
+			}
+
+			// Configure velocity over lifetime for acceleration
+			if (particleData.PartAcceleration.LengthSquared() > 0)
+			{
+				var velocityOverLifetime = ps.velocityOverLifetime;
+				velocityOverLifetime.enabled = true;
+				velocityOverLifetime.space = ParticleSystemSimulationSpace.Local;
+				
+				var acceleration = particleData.PartAcceleration.ToVector3();
+				velocityOverLifetime.x = new ParticleSystem.MinMaxCurve(acceleration.x);
+				velocityOverLifetime.y = new ParticleSystem.MinMaxCurve(acceleration.y);
+				velocityOverLifetime.z = new ParticleSystem.MinMaxCurve(acceleration.z);
+			}
+
+			// Configure color over lifetime for end color
+			var colorOverLifetime = ps.colorOverLifetime;
+			colorOverLifetime.enabled = true;
+			
+			Gradient gradient = new Gradient();
+			GradientColorKey[] colorKeys = new GradientColorKey[2];
+			GradientAlphaKey[] alphaKeys = new GradientAlphaKey[2];
+			
+			// Start color
+			colorKeys[0].color = new Color(
+				particleData.PartStartColor.R,
+				particleData.PartStartColor.G,
+				particleData.PartStartColor.B
+			);
+			colorKeys[0].time = 0f;
+			alphaKeys[0].alpha = particleData.PartStartColor.A;
+			alphaKeys[0].time = 0f;
+			
+			// End color
+			colorKeys[1].color = new Color(
+				particleData.PartEndColor.R,
+				particleData.PartEndColor.G,
+				particleData.PartEndColor.B
+			);
+			colorKeys[1].time = 1f;
+			alphaKeys[1].alpha = particleData.PartEndColor.A;
+			alphaKeys[1].time = 1f;
+			
+			gradient.SetKeys(colorKeys, alphaKeys);
+			colorOverLifetime.color = gradient;
+
+			// Configure size over lifetime for scale changes
+			if (particleData.PartEndScaleX != particleData.PartStartScaleX || 
+			    particleData.PartEndScaleY != particleData.PartStartScaleY)
+			{
+				var sizeOverLifetime = ps.sizeOverLifetime;
+				sizeOverLifetime.enabled = true;
+				
+				AnimationCurve sizeCurve = new AnimationCurve();
+				sizeCurve.AddKey(0f, 1f); // Start at 100% of initial size
+				sizeCurve.AddKey(1f, particleData.PartEndScaleX / particleData.PartStartScaleX); // End scale ratio
+				
+				sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, sizeCurve);
+			}
+
+			// Apply texture if specified
+			if (particleData.PartImageID != UUID.Zero)
+			{
+				var renderer = ps.GetComponent<ParticleSystemRenderer>();
+				if (renderer != null)
+				{
+					// Request texture for particle system
+					Texture2D particleTexture = _assetManager.RequestTexture(particleData.PartImageID);
+					if (particleTexture != null)
+					{
+						Material particleMaterial = new Material(Shader.Find("Sprites/Default"));
+						particleMaterial.mainTexture = particleTexture;
+						renderer.material = particleMaterial;
+					}
+				}
+			}
+
+			_log.LogDebug($"Setup particle system for object {sceneObject.LocalID} - Pattern: {particleData.Pattern}, MaxCount: {particleData.MaxCount}");
+		}
+		catch (Exception ex)
+		{
+			_log.LogError(ex, $"Failed to setup particles for object {sceneObject.LocalID}");
+		}
 	}
 
 	/// <summary>

@@ -306,19 +306,45 @@ public class SimManager : MonoBehaviour, IDisposable
 							{
 								orphanList.Add(prim);
 							}
-							go.transform.position = new Vector3(5000f, 5000f, 5000f);
+							// Null check before accessing transform
+							if (go?.transform != null)
+							{
+								go.transform.position = new Vector3(5000f, 5000f, 5000f);
+							}
+							else
+							{
+								_log.LogError($"GameObject or transform is null for prim {prim.LocalID}");
+							}
 						}
 						else
 						{
-							bgo.transform.parent = scenePrims[prim.ParentID].obj.transform.parent;
+							// Defensive null checks for parent hierarchy
+							if (scenePrims.TryGetValue(prim.ParentID, out ScenePrimData parentPrim) &&
+								parentPrim?.obj?.transform?.parent != null &&
+								bgo?.transform != null)
+							{
+								bgo.transform.parent = parentPrim.obj.transform.parent;
+							}
+							else
+							{
+								_log.LogWarning($"Invalid parent hierarchy for prim {prim.LocalID} with parent {prim.ParentID}");
+							}
 						}
 					}
 
-					bgo.transform.SetLocalPositionAndRotation(
-						prim.Position.ToUnity(),
-						prim.Rotation.ToUnity());
+					// Defensive null checks for transform operations
+					if (bgo?.transform != null && prim != null)
+					{
+						bgo.transform.SetLocalPositionAndRotation(
+							prim.Position.ToUnity(),
+							prim.Rotation.ToUnity());
+					}
+					else
+					{
+						_log.LogError($"Cannot set position/rotation for prim {prim?.LocalID}: bgo or transform is null");
+					}
 
-					if (orphanedPrims.TryGetValue(prim.ParentID, out List<Primitive> orphanedList))
+					if (orphanedPrims.TryGetValue(prim.ParentID, out List<Primitive> orphanedList) && orphanedList != null)
 					{
 						List<Primitive> orphansToProcess;
 						lock (orphanedList)
@@ -328,32 +354,77 @@ public class SimManager : MonoBehaviour, IDisposable
 						
 						foreach (Primitive p in orphansToProcess)
 						{
-							if (p.ParentID == prim.ParentID && scenePrims.ContainsKey(prim.ParentID))
+							if (p == null) continue; // Skip null primitives
+							
+							if (p.ParentID == prim.ParentID && 
+								scenePrims.TryGetValue(prim.ParentID, out ScenePrimData parentPrim) &&
+								scenePrims.TryGetValue(p.LocalID, out ScenePrimData childPrim))
 							{
-								scenePrims[p.LocalID].obj.transform.parent.parent =
-									scenePrims[prim.ParentID].obj.transform.parent;
-								bgo.transform.SetLocalPositionAndRotation(
-									prim.Position.ToUnity(),
-									p.Rotation.ToUnity());
+								// Defensive null checks for complex transform hierarchy
+								if (childPrim?.obj?.transform?.parent != null &&
+									parentPrim?.obj?.transform?.parent != null)
+								{
+									childPrim.obj.transform.parent.parent = parentPrim.obj.transform.parent;
+								}
+								else
+								{
+									_log.LogWarning($"Invalid transform hierarchy when processing orphan {p.LocalID}");
+									continue;
+								}
 
-								if (IsHUD(scenePrims[p.LocalID].prim))
+								// Null check before setting transform
+								if (bgo?.transform != null && prim != null && p != null)
+								{
+									bgo.transform.SetLocalPositionAndRotation(
+										prim.Position.ToUnity(),
+										p.Rotation.ToUnity());
+								}
+
+								// Safe HUD layer check
+								if (childPrim?.prim != null && IsHUD(childPrim.prim) && bgo != null)
 								{
 									bgo.SetLayerRecursively(8);
 								}
 
-								HandleAttachment(bgo, prim);
+								// Safe attachment handling
+								if (bgo != null && prim != null)
+								{
+									HandleAttachment(bgo, prim);
+								}
 
 								CleanOrphanedPrims(prim);
 							}
 						}
 					}
 
-					scenePrims[prim.LocalID].Render();
-
-					//OpenSim doesn't send avatar objects with the pcode of Avatar, so this we have to do new avatar shit here if OpenSim
-					if (ClientManager.isOpenSim)
+					// Safe rendering with null checks
+					if (scenePrims.TryGetValue(prim.LocalID, out ScenePrimData primData) && primData != null)
 					{
-						scenePrims[prim.LocalID].DoAvatarStuff();
+						try
+						{
+							primData.Render();
+						}
+						catch (Exception ex)
+						{
+							_log.LogError($"Error rendering prim {prim.LocalID}: {ex.Message}");
+						}
+
+						//OpenSim doesn't send avatar objects with the pcode of Avatar, so this we have to do new avatar shit here if OpenSim
+						if (ClientManager.isOpenSim)
+						{
+							try
+							{
+								primData.DoAvatarStuff();
+							}
+							catch (Exception ex)
+							{
+								_log.LogError($"Error doing avatar stuff for prim {prim.LocalID}: {ex.Message}");
+							}
+						}
+					}
+					else
+					{
+						_log.LogError($"Failed to find or access scene prim data for {prim.LocalID}");
 					}
 				}
 				else
@@ -368,26 +439,68 @@ public class SimManager : MonoBehaviour, IDisposable
 						Debug.LogWarning($"Error adding prim to dictionary.");
 					}
 
-					Destroy(bgo);
+					// Safe cleanup with null check
+					if (bgo != null)
+					{
+						Destroy(bgo);
+					}
 				}
 
-				if (e.Avatar.LocalID == client.Self.LocalID)
+				// Safe avatar setup with comprehensive null checks
+				if (e?.Avatar != null && client?.Self != null && e.Avatar.LocalID == client.Self.LocalID)
 				{
-					ClientManager.currentOutfitFolder = new CurrentOutfitFolder();
-					ScenePrimData spd = ClientManager.simManager.scenePrims[ClientManager.client.Self.LocalID];
-					avatar.myAvatar.parent = spd.meshHolder.transform.root;
-					avatar.myAvatar.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
-					avatar.rotation = spd.prim.Rotation.ToUnity();
+					try
+					{
+						ClientManager.currentOutfitFolder = new CurrentOutfitFolder();
+						
+						if (ClientManager.simManager?.scenePrims != null &&
+							ClientManager.simManager.scenePrims.TryGetValue(client.Self.LocalID, out ScenePrimData spd) &&
+							spd?.meshHolder?.transform?.root != null &&
+							avatar?.myAvatar != null)
+						{
+							avatar.myAvatar.parent = spd.meshHolder.transform.root;
+							avatar.myAvatar.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+							
+							if (spd.prim != null)
+							{
+								avatar.rotation = spd.prim.Rotation.ToUnity();
+							}
+						}
+						else
+						{
+							_log.LogWarning("Cannot setup avatar: missing required components or scene data");
+						}
+					}
+					catch (Exception ex)
+					{
+						_log.LogError($"Error setting up avatar for localID {client.Self.LocalID}: {ex.Message}");
+					}
 				}
 			}
 			else
 			{
-				if (scenePrims.ContainsKey(e.Avatar.LocalID))
+				// Safe avatar update with null checks
+				if (e?.Avatar != null && 
+					scenePrims.TryGetValue(e.Avatar.LocalID, out ScenePrimData avatarPrim) &&
+					avatarPrim != null)
 				{
 					scenePrimsContainsAvatar = true;
-					scenePrims[e.Avatar.LocalID].prim = e.Avatar;
-					scenePrims[e.Avatar.LocalID].velocity = e.Avatar.Velocity.ToVector3();
-					scenePrims[e.Avatar.LocalID].omega = e.Avatar.AngularVelocity.ToVector3();
+					avatarPrim.prim = e.Avatar;
+					
+					// Safe vector conversion with null checks
+					if (e.Avatar.Velocity != null)
+					{
+						avatarPrim.velocity = e.Avatar.Velocity.ToVector3();
+					}
+					
+					if (e.Avatar.AngularVelocity != null)
+					{
+						avatarPrim.omega = e.Avatar.AngularVelocity.ToVector3();
+					}
+				}
+				else if (e?.Avatar != null)
+				{
+					_log.LogWarning($"Avatar update received but scene prim {e.Avatar.LocalID} not found or is null");
 				}
 			}
 		}
@@ -923,26 +1036,95 @@ public class SimManager : MonoBehaviour, IDisposable
 
 	public static void PreTextureFace(Primitive prim, int j, Renderer rendr)
 	{
-		TextureEntryFace tef = prim.Textures.GetFace((uint)j);
-		UUID uuid = tef.TextureID;
-		Color color = tef.RGBA.ToUnity();
-
-		if (!ClientManager.assetManager.materialContainer.ContainsKey(uuid))
+		// Comprehensive null checks
+		if (prim == null)
 		{
-			ClientManager.assetManager.materialContainer.Add(uuid,
-				new MaterialContainer(uuid, Texture2D.Instantiate(Texture2D.whiteTexture), 3));
-			if (!ClientManager.assetManager.materials.ContainsKey(uuid))
-			{
-				ClientManager.assetManager.materials.Add(uuid, new List<Renderer>());
-			}
-
-			ClientManager.assetManager.materials[uuid].Add(rendr);
+			Debug.LogError("PreTextureFace called with null primitive");
+			return;
 		}
 
-		DissolveIn dis = rendr.gameObject.AddComponent<DissolveIn>();
-		dis.texture = ClientManager.assetManager.materialContainer[uuid].texture;
-		dis.color = color;
-		dis.newMat = ClientManager.assetManager.materialContainer[uuid].GetMaterial(color, tef.Glow, tef.Fullbright);
+		if (rendr == null)
+		{
+			Debug.LogError("PreTextureFace called with null renderer");
+			return;
+		}
+
+		if (prim.Textures == null)
+		{
+			Debug.LogError($"Primitive {prim.LocalID} has null textures");
+			return;
+		}
+
+		if (ClientManager.assetManager == null)
+		{
+			Debug.LogError("ClientManager.assetManager is null");
+			return;
+		}
+
+		try
+		{
+			TextureEntryFace tef = prim.Textures.GetFace((uint)j);
+			if (tef == null)
+			{
+				Debug.LogWarning($"Failed to get texture face {j} for primitive {prim.LocalID}");
+				return;
+			}
+
+			UUID uuid = tef.TextureID;
+			Color color = tef.RGBA.ToUnity();
+
+			// Use thread-safe TryGetValue instead of ContainsKey
+			if (!ClientManager.assetManager.materialContainer.TryGetValue(uuid, out MaterialContainer existingContainer))
+			{
+				// Create new material container with defensive programming
+				try
+				{
+					var newTexture = Texture2D.Instantiate(Texture2D.whiteTexture);
+					if (newTexture == null)
+					{
+						Debug.LogError("Failed to instantiate white texture");
+						return;
+					}
+
+					var newContainer = new MaterialContainer(uuid, newTexture, 3);
+					ClientManager.assetManager.materialContainer.TryAdd(uuid, newContainer);
+
+					// Add renderer to materials list safely
+					var rendererList = ClientManager.assetManager.materials.GetOrAdd(uuid, _ => new List<Renderer>());
+					lock (rendererList)
+					{
+						if (!rendererList.Contains(rendr))
+						{
+							rendererList.Add(rendr);
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					Debug.LogError($"Error creating material container for texture {uuid}: {ex.Message}");
+					return;
+				}
+			}
+
+			// Safe component addition with null checks
+			if (rendr.gameObject == null)
+			{
+				Debug.LogError("Renderer has null gameObject");
+				return;
+			}
+
+			DissolveIn dis = rendr.gameObject.AddComponent<DissolveIn>();
+			if (dis != null && ClientManager.assetManager.materialContainer.TryGetValue(uuid, out MaterialContainer container))
+			{
+				dis.texture = container.texture;
+				dis.color = color;
+				dis.newMat = container.GetMaterial(color, tef.Glow, tef.Fullbright);
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError($"Unexpected error in PreTextureFace: {ex.Message}");
+		}
 	}
 
 	public void TextureFace(Primitive prim, int subMeshIndex, Renderer rendr)

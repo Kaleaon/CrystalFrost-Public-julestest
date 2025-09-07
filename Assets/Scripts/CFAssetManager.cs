@@ -742,23 +742,91 @@ namespace CrystalFrost
 
 		public void RequestMesh2(GameObject gameObject, Primitive primitive, UUID uuid, GameObject meshHolder)
 		{
-			if (gameObject.IsDestroyed())
+			// Comprehensive null checks with proper logging
+			if (gameObject == null)
 			{
-				// log warning?
-				return;
-			}
-			if (meshHolder.IsDestroyed())
-			{
-				// log warning?
+				_log.LogError("RequestMesh2 called with null gameObject");
 				return;
 			}
 
-			_assetManager.Meshes.RequestMesh(gameObject, primitive, uuid, meshHolder);
+			if (primitive == null)
+			{
+				_log.LogError("RequestMesh2 called with null primitive");
+				return;
+			}
+
+			if (meshHolder == null)
+			{
+				_log.LogError("RequestMesh2 called with null meshHolder");
+				return;
+			}
+
+			if (uuid == UUID.Zero)
+			{
+				_log.LogWarning($"RequestMesh2 called with zero UUID for primitive {primitive.LocalID}");
+				return;
+			}
+
+			// Check if objects are destroyed (Unity-specific check)
+			if (gameObject.IsDestroyed())
+			{
+				_log.LogWarning($"GameObject for primitive {primitive.LocalID} is destroyed, skipping mesh request");
+				return;
+			}
+
+			if (meshHolder.IsDestroyed())
+			{
+				_log.LogWarning($"MeshHolder for primitive {primitive.LocalID} is destroyed, skipping mesh request");
+				return;
+			}
+
+			// Null check for asset manager
+			if (_assetManager?.Meshes == null)
+			{
+				_log.LogError("Asset manager or mesh manager is null, cannot request mesh");
+				return;
+			}
+
+			try
+			{
+				_assetManager.Meshes.RequestMesh(gameObject, primitive, uuid, meshHolder);
+			}
+			catch (Exception ex)
+			{
+				_log.LogError($"Error requesting mesh for primitive {primitive.LocalID}: {ex.Message}");
+			}
 		}
 
 		public void RequestAnimation(Primitive primitive, UUID animationId)
 		{
-			_assetManager.AnimationManager.RequestAnimation(primitive,animationId);
+			// Null validation for parameters
+			if (primitive == null)
+			{
+				_log.LogError("RequestAnimation called with null primitive");
+				return;
+			}
+
+			if (animationId == UUID.Zero)
+			{
+				_log.LogWarning($"RequestAnimation called with zero UUID for primitive {primitive.LocalID}");
+				return;
+			}
+
+			// Null check for asset manager
+			if (_assetManager?.AnimationManager == null)
+			{
+				_log.LogError("Asset manager or animation manager is null, cannot request animation");
+				return;
+			}
+
+			try
+			{
+				_assetManager.AnimationManager.RequestAnimation(primitive, animationId);
+			}
+			catch (Exception ex)
+			{
+				_log.LogError($"Error requesting animation {animationId} for primitive {primitive.LocalID}: {ex.Message}");
+			}
 		}
 
 		private readonly ConcurrentDictionary<UUID, List<SculptData>> requestedMeshes = new();

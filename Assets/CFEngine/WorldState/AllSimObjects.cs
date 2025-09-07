@@ -7,7 +7,7 @@ using System.Linq;
 
 namespace CrystalFrost.WorldState
 {
-	public interface IAllSimObject
+	public interface IAllSimObject : IDisposable
 	{
 		/// <summary>
 		/// Returns the object or null if not found.
@@ -26,7 +26,7 @@ namespace CrystalFrost.WorldState
 		SimObject AddOrUpdate(uint localID, Func<SimObject> buildNew, Func<SimObject, SimObject> update);
 	}
 
-	public class AllSimObjects : IAllSimObject
+	public class AllSimObjects : IAllSimObject, IDisposable
 	{
 		private readonly Dictionary<uint, List<SimObject>> _orphans = new();
 
@@ -105,6 +105,13 @@ namespace CrystalFrost.WorldState
 			}
 
 			return result;
+		}
+
+		public void Dispose()
+		{
+			_log.LogInformation("Disposing all sim objects.");
+			_objects.Clear();
+			_orphans.Clear();
 		}
 	}
 }

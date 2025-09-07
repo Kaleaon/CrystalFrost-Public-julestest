@@ -524,13 +524,20 @@ namespace CrystalFrost
 					return;
 				}
 
-				if (assetTexture.Image?.ExportBitmap() == null)
+				if (assetTexture.Image == null)
+				{
+					_log.LogError($"Asset texture {id} has no image data.");
+					return;
+				}
+
+				var bitmap = assetTexture.Image.ExportBitmap();
+				if (bitmap == null)
 				{
 					_log.LogError($"Failed to export bitmap from asset texture {id}");
 					return;
 				}
 
-				fmesh = mesher.GenerateFacetedSculptMesh(prim, assetTexture.Image.ExportBitmap(), DetailLevel.Highest);
+				fmesh = mesher.GenerateFacetedSculptMesh(prim, bitmap, DetailLevel.Highest);
 				
 				if (fmesh == null || fmesh.Faces == null)
 				{
@@ -694,21 +701,21 @@ namespace CrystalFrost
 				{
 					try
 					{
-						if (renderer == null)
+						if (renderer == null || renderer.gameObject == null)
 						{
-							_log.LogWarning($"Null renderer found in materials list for texture {uuid}");
+							_log.LogWarning($"Null or destroyed renderer found in materials list for texture {uuid}");
 							continue;
 						}
 
-						DissolveIn dis = renderer.GetComponent<DissolveIn>();
 						PrimInfo pi = renderer.GetComponent<PrimInfo>();
-						
 						if (pi == null)
 						{
 							_log.LogWarning($"No PrimInfo component found on renderer for texture {uuid}");
 							removeMaterials.Add(renderer);
 							continue;
 						}
+
+						DissolveIn dis = renderer.GetComponent<DissolveIn>();
 
 						if (!ClientManager.simManager.scenePrims.TryGetValue(pi.localID, out ScenePrimData scenePrim))
 						{

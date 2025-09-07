@@ -80,6 +80,13 @@ namespace CrystalFrost
 				_serviceProvider = _serviceCollection.BuildServiceProvider();
 				_initialized = true;
 				_log.DIProviderInitialized();
+
+				// Subscribe to the OnDestroy event to dispose of any IDisposable services
+				var events = GetService<IEngineBehaviorEvents>();
+				events.OnDestroy += () =>
+				{
+					GetService<IAllSimObject>().Dispose();
+				};
 			}
 
 			var globalEx = _serviceProvider.GetService<IGlobalExceptionHandler>();

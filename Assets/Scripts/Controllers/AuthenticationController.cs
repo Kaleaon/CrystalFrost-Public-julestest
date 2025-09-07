@@ -8,7 +8,6 @@ using CrystalFrost.Client.Credentials;
 using CrystalFrost.Config;
 using CrystalFrost.Services;
 using Microsoft.Extensions.Logging;
-using Bunny;
 
 namespace CrystalFrost.Controllers
 {

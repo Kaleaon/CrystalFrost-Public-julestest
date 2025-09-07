@@ -1464,12 +1464,12 @@ public class SimManager : MonoBehaviour, IDisposable
 
 		var localID = simObject.LocalID;
 
-		var heirarchyHolder = Instantiate(blank);
-		heirarchyHolder.name = $"Heirarch Holder ({localID})";
+		var hierarchyHolder = Instantiate(blank);
+		hierarchyHolder.name = $"Hierarchy Holder ({localID})";
 
 		var gameObject = Instantiate(cube);
 		gameObject.name = $"Object ({localID})";
-		gameObject.transform.parent = heirarchyHolder.transform;
+		gameObject.transform.parent = hierarchyHolder.transform;
 		gameObject.transform.localPosition = Vector3.zero;
 
 		// disable rendering of the newly created object.
@@ -1480,12 +1480,12 @@ public class SimManager : MonoBehaviour, IDisposable
 
 		var meshHolder = Instantiate(blank);
 		meshHolder.name = $"Mesh Holder({localID})";
-		meshHolder.transform.parent = heirarchyHolder.transform;
+		meshHolder.transform.parent = hierarchyHolder.transform;
 
 		var sceneObject = new SceneObject()
 		{
 			LocalID = simObject.LocalID,
-			HeirachyHolder = heirarchyHolder,
+			HierarchyHolder = hierarchyHolder,
 			GameObject = gameObject,
 			MeshHolder = meshHolder,
 			SimObject = simObject,
@@ -1494,7 +1494,7 @@ public class SimManager : MonoBehaviour, IDisposable
 		if (!_renderManager.SceneObjects.Add(sceneObject))
 		{
 			// oh no, something when wrong. Lets clean up our mess.
-			Destroy(heirarchyHolder);
+			Destroy(hierarchyHolder);
 		}
 
 		gameObject.transform.localScale = simObject.Scale;
@@ -1518,16 +1518,16 @@ public class SimManager : MonoBehaviour, IDisposable
 			if (simObject.IsHud())
 			{
 				int anchorIndex = (int)simObject.AttachmentPoint - 31;
-				heirarchyHolder.transform.parent = hudAnchors[anchorIndex];
-				heirarchyHolder.SetLayerRecursively(8);
+				hierarchyHolder.transform.parent = hudAnchors[anchorIndex];
+				hierarchyHolder.SetLayerRecursively(8);
 			}
 			else
 			{
-				heirarchyHolder.transform.parent = sceneParent.GameObject.transform.parent;
+				hierarchyHolder.transform.parent = sceneParent.GameObject.transform.parent;
 			}
 		}
 
-		heirarchyHolder.transform.SetLocalPositionAndRotation(
+		hierarchyHolder.transform.SetLocalPositionAndRotation(
 			simObject.SimPosition,
 			simObject.SimRotation);
 

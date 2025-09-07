@@ -74,9 +74,12 @@ namespace CrystalFrost.UI
 
         private void Awake()
         {
-            _logger = Services.GetService<ILogger<UIStateTracker>>();
             _currentUserContext = GetCurrentUserContext();
-            
+        }
+
+        private void Start()
+        {
+            _logger = Services.GetService<ILogger<UIStateTracker>>();
             _logger.LogInformation("UIStateTracker initialized");
         }
 

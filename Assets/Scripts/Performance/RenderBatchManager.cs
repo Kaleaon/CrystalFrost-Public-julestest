@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
+using CrystalFrost;
 using Microsoft.Extensions.Logging;
 using OpenMetaverse;
 using CrystalFrost.Services;

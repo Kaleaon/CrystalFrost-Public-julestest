@@ -4,6 +4,7 @@ using UnityEngine;
 using OpenMetaverse;
 using OpenMetaverse.Assets;
 using OpenMetaverse.Rendering;
+using CrystalFrost;
 using Microsoft.Extensions.Logging;
 using CrystalFrost.Services;
 using CrystalFrost.Assets.Mesh;

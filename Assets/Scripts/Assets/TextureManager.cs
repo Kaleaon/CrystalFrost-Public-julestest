@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using UnityEngine;
 using OpenMetaverse;
 using OpenMetaverse.Assets;
+using CrystalFrost;
 using Microsoft.Extensions.Logging;
 using CrystalFrost.Services;
 using CrystalFrost.Performance;

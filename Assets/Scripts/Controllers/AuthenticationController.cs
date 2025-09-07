@@ -2,6 +2,8 @@ using System;
 using System.Collections;
 using UnityEngine;
 using OpenMetaverse;
+using CrystalFrost;
+using CrystalFrost.Scripts;
 using CrystalFrost.Client.Credentials;
 using CrystalFrost.Config;
 using CrystalFrost.Services;
@@ -140,7 +142,7 @@ namespace CrystalFrost.Controllers
                 return defaultUri;
             }
 
-            return Settings.AGNI_LOGIN_SERVER;
+            return OpenMetaverse.Settings.AGNI_LOGIN_SERVER;
         }
 
         public void Logout()

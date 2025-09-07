@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Profiling;
+using CrystalFrost;
 using Microsoft.Extensions.Logging;
 using CrystalFrost.Services;
 

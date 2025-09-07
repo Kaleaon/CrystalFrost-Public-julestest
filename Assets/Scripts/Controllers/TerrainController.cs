@@ -1,4 +1,5 @@
 using UnityEngine;
+using CrystalFrost;
 using Microsoft.Extensions.Logging;
 
 namespace CrystalFrost.Controllers

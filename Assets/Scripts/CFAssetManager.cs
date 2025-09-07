@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using OpenMetaverse;
+using CrystalFrost;
 using Microsoft.Extensions.Logging;
 using CrystalFrost.Services;
 using CrystalFrost.Assets;

@@ -23,12 +23,25 @@ public class InventoryWindowUI : MonoBehaviour
 
     private void Start()
     {
-        // Initialize logger and UI state tracker
-        _logger = Services.GetService<ILogger<InventoryWindowUI>>();
-        _uiStateTracker = Services.GetService<IUIStateTracker>();
+        // Initialize logger
+        try
+        {
+            _logger = Services.GetService<ILogger<InventoryWindowUI>>();
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Failed to get logger for InventoryWindowUI: {ex.Message}");
+        }
+
+        // Find the UI state tracker in the scene
+        _uiStateTracker = FindObjectOfType<UIStateTracker>();
+        if (_uiStateTracker == null)
+        {
+            Debug.LogWarning("UIStateTracker not found in scene. UI tracking will be disabled for InventoryWindowUI.");
+        }
         
         // Track the creation of this inventory window
-        _uiStateTracker.TrackComponentCreated(gameObject, "InventoryWindow");
+        _uiStateTracker?.TrackComponentCreated(gameObject, "InventoryWindow");
         
         // Subscribe to the folder update event to know when the inventory is ready
         ClientManager.client.Inventory.FolderUpdated += Inventory_FolderUpdated;
@@ -42,7 +55,7 @@ public class InventoryWindowUI : MonoBehaviour
         if (_uiStateTracker != null)
         {
             string componentId = GetComponentId();
-            _uiStateTracker.TrackComponentDestroyed(componentId, "InventoryWindow");
+            _uiStateTracker?.TrackComponentDestroyed(componentId, "InventoryWindow");
         }
         
         // Always unsubscribe from events
@@ -61,7 +74,7 @@ public class InventoryWindowUI : MonoBehaviour
             PopulateTree(ClientManager.client.Inventory.Store.RootFolder, contentRoot, 0);
             
             // Track that the inventory tree has been populated
-            _uiStateTracker.TrackContentChanged(gameObject, "InventoryWindow", new { action = "TreePopulated", rootFolderId = e.FolderID.ToString() });
+            _uiStateTracker?.TrackContentChanged(gameObject, "InventoryWindow", new { action = "TreePopulated", rootFolderId = e.FolderID.ToString() });
         }
     }
 
@@ -112,7 +125,7 @@ public class InventoryWindowUI : MonoBehaviour
             }
             
             // Track folder expansion
-            _uiStateTracker.TrackInteraction(nodeUI.gameObject, "InventoryTreeNode", "FolderExpanded", new { folderId = folder.UUID.ToString(), folderName = folder.Name, depth });
+            _uiStateTracker?.TrackInteraction(nodeUI.gameObject, "InventoryTreeNode", "FolderExpanded", new { folderId = folder.UUID.ToString(), folderName = folder.Name, depth });
         }
         else
         {
@@ -120,7 +133,7 @@ public class InventoryWindowUI : MonoBehaviour
             HideChildren(folder.UUID);
             
             // Track folder collapse
-            _uiStateTracker.TrackInteraction(nodeUI.gameObject, "InventoryTreeNode", "FolderCollapsed", new { folderId = folder.UUID.ToString(), folderName = folder.Name, depth });
+            _uiStateTracker?.TrackInteraction(nodeUI.gameObject, "InventoryTreeNode", "FolderCollapsed", new { folderId = folder.UUID.ToString(), folderName = folder.Name, depth });
         }
     }
 
@@ -144,7 +157,7 @@ public class InventoryWindowUI : MonoBehaviour
     public void ShowContextMenu(InventoryBase item, Vector2 position)
     {
         // Track that context menu was opened
-        _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "MenuOpened", new { itemId = item.UUID.ToString(), itemName = item.Name, itemType = item.GetType().Name, position });
+        _uiStateTracker?.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "MenuOpened", new { itemId = item.UUID.ToString(), itemName = item.Name, itemType = item.GetType().Name, position });
         
         contextMenu.ClearButtons();
 
@@ -153,12 +166,12 @@ public class InventoryWindowUI : MonoBehaviour
         {
             contextMenu.AddButton("Wear", () => {
                 // Track wear action
-                _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "WearItem", new { itemId = item.UUID.ToString(), itemName = item.Name });
+                _uiStateTracker?.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "WearItem", new { itemId = item.UUID.ToString(), itemName = item.Name });
                 ClientManager.client.Appearance.AddToOutfit(new List<InventoryItem> { (InventoryItem)item }, true);
             });
             contextMenu.AddButton("Take Off", () => {
                 // Track take off action
-                _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "TakeOffItem", new { itemId = item.UUID.ToString(), itemName = item.Name });
+                _uiStateTracker?.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "TakeOffItem", new { itemId = item.UUID.ToString(), itemName = item.Name });
                 ClientManager.client.Appearance.RemoveFromOutfit(new List<InventoryItem> { (InventoryItem)item });
             });
         }
@@ -168,7 +181,7 @@ public class InventoryWindowUI : MonoBehaviour
             // Comprehensive attachment functionality with point selection
             contextMenu.AddButton("Attach To...", () => {
                 // Track attachment dialog opening
-                _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "AttachDialogOpened", new { itemId = item.UUID.ToString(), itemName = item.Name });
+                _uiStateTracker?.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "AttachDialogOpened", new { itemId = item.UUID.ToString(), itemName = item.Name });
                 
                 if (attachmentPointSelector != null)
                 {
@@ -176,7 +189,7 @@ public class InventoryWindowUI : MonoBehaviour
                         try
                         {
                             // Track attachment action
-                            _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "AttachItem", new { itemId = item.UUID.ToString(), itemName = item.Name, attachmentPoint = attachmentPoint.ToString() });
+                            _uiStateTracker?.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "AttachItem", new { itemId = item.UUID.ToString(), itemName = item.Name, attachmentPoint = attachmentPoint.ToString() });
                             
                             ClientManager.client.Objects.AttachObject(
                                 ClientManager.client.Network.CurrentSim,
@@ -203,7 +216,7 @@ public class InventoryWindowUI : MonoBehaviour
                 try
                 {
                     // Track detach action
-                    _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "DetachItem", new { itemId = item.UUID.ToString(), itemName = item.Name });
+                    _uiStateTracker?.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "DetachItem", new { itemId = item.UUID.ToString(), itemName = item.Name });
                     
                     ClientManager.client.Appearance.Detach((InventoryItem)item);
                     _logger.LogInformation($"Detached {item.Name}");
@@ -218,7 +231,7 @@ public class InventoryWindowUI : MonoBehaviour
         // Add more general actions
         contextMenu.AddButton("Delete", () => {
             // Track delete action
-            _uiStateTracker.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "DeleteItem", new { itemId = item.UUID.ToString(), itemName = item.Name });
+            _uiStateTracker?.TrackInteraction(contextMenu.gameObject, "InventoryContextMenu", "DeleteItem", new { itemId = item.UUID.ToString(), itemName = item.Name });
             ClientManager.client.Inventory.Remove(item.UUID, null);
         });
 
@@ -245,7 +258,7 @@ public class InventoryWindowUI : MonoBehaviour
             
             // Track item selection
             var itemData = node.GetItemData();
-            _uiStateTracker.TrackInteraction(node.gameObject, "InventoryTreeNode", "ItemSelected", new { 
+            _uiStateTracker?.TrackInteraction(node.gameObject, "InventoryTreeNode", "ItemSelected", new { 
                 itemId = itemData.UUID.ToString(), 
                 itemName = itemData.Name, 
                 itemType = itemData.GetType().Name 

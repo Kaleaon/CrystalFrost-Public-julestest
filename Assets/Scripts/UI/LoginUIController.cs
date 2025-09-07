@@ -44,7 +44,7 @@ namespace CrystalFrost.UI
             // Get UI state tracker
             try
             {
-                _uiStateTracker = Services.GetService<IUIStateTracker>();
+                _uiStateTracker = FindObjectOfType<UIStateTracker>();
             }
             catch (System.Exception ex)
             {
@@ -57,11 +57,11 @@ namespace CrystalFrost.UI
             if (_uiStateTracker != null)
             {
                 if (loginUI != null)
-                    _uiStateTracker.TrackComponentCreated(loginUI, "LoginWindow");
+                    _uiStateTracker?.TrackComponentCreated(loginUI, "LoginWindow");
                 if (loggedInUI != null)
-                    _uiStateTracker.TrackComponentCreated(loggedInUI, "LoggedInWindow");
+                    _uiStateTracker?.TrackComponentCreated(loggedInUI, "LoggedInWindow");
                 if (consoleUI != null)
-                    _uiStateTracker.TrackComponentCreated(consoleUI, "ConsoleWindow");
+                    _uiStateTracker?.TrackComponentCreated(consoleUI, "ConsoleWindow");
             }
         }
 
@@ -76,9 +76,9 @@ namespace CrystalFrost.UI
                 // Track content changes
                 if (_uiStateTracker != null)
                 {
-                    _uiStateTracker.TrackContentChanged(firstName.gameObject, "InputField", 
+                    _uiStateTracker?.TrackContentChanged(firstName.gameObject, "InputField", 
                         new { FieldName = "FirstName", Value = _currentCredential.FirstName });
-                    _uiStateTracker.TrackContentChanged(lastName.gameObject, "InputField", 
+                    _uiStateTracker?.TrackContentChanged(lastName.gameObject, "InputField", 
                         new { FieldName = "LastName", Value = _currentCredential.LastName });
                 }
             }
@@ -92,8 +92,8 @@ namespace CrystalFrost.UI
             // Track UI state changes
             if (_uiStateTracker != null)
             {
-                _uiStateTracker.TrackVisibilityChanged(loginUI, "LoginWindow", true);
-                _uiStateTracker.TrackVisibilityChanged(loggedInUI, "LoggedInWindow", false);
+                _uiStateTracker?.TrackVisibilityChanged(loginUI, "LoginWindow", true);
+                _uiStateTracker?.TrackVisibilityChanged(loggedInUI, "LoggedInWindow", false);
             }
         }
 
@@ -105,8 +105,8 @@ namespace CrystalFrost.UI
             // Track UI state changes
             if (_uiStateTracker != null)
             {
-                _uiStateTracker.TrackVisibilityChanged(loginUI, "LoginWindow", false);
-                _uiStateTracker.TrackVisibilityChanged(loggedInUI, "LoggedInWindow", true);
+                _uiStateTracker?.TrackVisibilityChanged(loginUI, "LoginWindow", false);
+                _uiStateTracker?.TrackVisibilityChanged(loggedInUI, "LoggedInWindow", true);
             }
         }
 
@@ -115,7 +115,7 @@ namespace CrystalFrost.UI
             // Track the interaction
             if (_uiStateTracker != null)
             {
-                _uiStateTracker.TrackInteraction(gameObject, "LoginUIController", "LoginButtonClicked", 
+                _uiStateTracker?.TrackInteraction(gameObject, "LoginUIController", "LoginButtonClicked", 
                     new { FirstName = firstName.text, LastName = lastName.text, GridURL = gridURL.text });
             }
 
@@ -162,7 +162,7 @@ namespace CrystalFrost.UI
                 // Track console content change
                 if (_uiStateTracker != null)
                 {
-                    _uiStateTracker.TrackContentChanged(console.gameObject, "ConsoleText", 
+                    _uiStateTracker?.TrackContentChanged(console.gameObject, "ConsoleText", 
                         new { Message = message });
                 }
             }
@@ -180,7 +180,7 @@ namespace CrystalFrost.UI
                 // Track credential update
                 if (_uiStateTracker != null)
                 {
-                    _uiStateTracker.TrackInteraction(gameObject, "LoginUIController", "CredentialsUpdated", 
+                    _uiStateTracker?.TrackInteraction(gameObject, "LoginUIController", "CredentialsUpdated", 
                         new { FirstName = firstName.text, LastName = lastName.text });
                 }
             }
@@ -199,17 +199,17 @@ namespace CrystalFrost.UI
                 if (loginUI != null)
                 {
                     string componentId = $"{GetHierarchyPath(loginUI)}_{loginUI.GetInstanceID()}";
-                    _uiStateTracker.TrackComponentDestroyed(componentId, "LoginWindow");
+                    _uiStateTracker?.TrackComponentDestroyed(componentId, "LoginWindow");
                 }
                 if (loggedInUI != null)
                 {
                     string componentId = $"{GetHierarchyPath(loggedInUI)}_{loggedInUI.GetInstanceID()}";
-                    _uiStateTracker.TrackComponentDestroyed(componentId, "LoggedInWindow");
+                    _uiStateTracker?.TrackComponentDestroyed(componentId, "LoggedInWindow");
                 }
                 if (consoleUI != null)
                 {
                     string componentId = $"{GetHierarchyPath(consoleUI)}_{consoleUI.GetInstanceID()}";
-                    _uiStateTracker.TrackComponentDestroyed(componentId, "ConsoleWindow");
+                    _uiStateTracker?.TrackComponentDestroyed(componentId, "ConsoleWindow");
                 }
             }
         }

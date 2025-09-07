@@ -18,7 +18,7 @@ namespace CrystalFrost.UI
         private void Awake()
         {
             _logger = Services.GetService<ILogger<InventoryUIController>>();
-            _uiStateTracker = Services.GetService<IUIStateTracker>();
+            _uiStateTracker = FindObjectOfType<UIStateTracker>();
         }
 
         public void CreateInventoryWindow()
@@ -26,7 +26,7 @@ namespace CrystalFrost.UI
             _logger.LogInformation("Creating inventory window");
             
             // Track the creation process start
-            _uiStateTracker.TrackInteraction(gameObject, "InventoryUIController", "CreateWindowStarted", null);
+            _uiStateTracker?.TrackInteraction(gameObject, "InventoryUIController", "CreateWindowStarted", null);
 
             // 1. Create Canvas
             GameObject canvasGO = new GameObject("InventoryCanvas");
@@ -37,7 +37,7 @@ namespace CrystalFrost.UI
             canvasGO.AddComponent<GraphicRaycaster>();
 
             // Track canvas creation
-            _uiStateTracker.TrackComponentCreated(canvasGO, "InventoryCanvas");
+            _uiStateTracker?.TrackComponentCreated(canvasGO, "InventoryCanvas");
 
             // 2. Create Window Panel
             GameObject windowPanel = CreateInventoryPanel(canvasGO.transform);
@@ -58,7 +58,7 @@ namespace CrystalFrost.UI
             windowPanel.AddComponent<DraggableWindow>();
 
             // Track successful window creation
-            _uiStateTracker.TrackInteraction(gameObject, "InventoryUIController", "CreateWindowCompleted", new { windowId = windowPanel.GetInstanceID() });
+            _uiStateTracker?.TrackInteraction(gameObject, "InventoryUIController", "CreateWindowCompleted", new { windowId = windowPanel.GetInstanceID() });
 
             _logger.LogInformation("Inventory window created successfully");
         }
@@ -89,7 +89,7 @@ namespace CrystalFrost.UI
             CreateInventoryHeader(panel.transform);
 
             // Track panel creation
-            _uiStateTracker.TrackComponentCreated(panel, "InventoryPanel");
+            _uiStateTracker?.TrackComponentCreated(panel, "InventoryPanel");
 
             return panel;
         }

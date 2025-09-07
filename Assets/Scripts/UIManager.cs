@@ -9,16 +9,22 @@ public class UIManager : MonoBehaviour
 
     private void Start()
     {
-        // Get the UI state tracker from services
+        // Find the UI state tracker in the scene
+        _uiStateTracker = FindObjectOfType<UIStateTracker>();
+        
         try
         {
-            _uiStateTracker = Services.GetService<IUIStateTracker>();
             _logger = Services.GetService<ILogger<UIManager>>();
             _logger.LogInformation("UIManager initialized with UI state tracking");
         }
         catch (System.Exception ex)
         {
-            Debug.LogError($"Failed to initialize UIManager with tracking: {ex.Message}");
+            Debug.LogError($"Failed to get logger for UIManager: {ex.Message}");
+        }
+
+        if (_uiStateTracker == null)
+        {
+            Debug.LogWarning("UIStateTracker not found in scene. UI tracking will be disabled.");
         }
     }
 

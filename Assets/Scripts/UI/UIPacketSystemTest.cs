@@ -31,7 +31,7 @@ namespace CrystalFrost.UI
             // Get services
             try
             {
-                _uiStateTracker = Services.GetService<IUIStateTracker>();
+                _uiStateTracker = FindObjectOfType<UIStateTracker>();
                 _uiPacketSender = Services.GetService<IUIPacketSender>();
                 _logger = Services.GetService<ILogger<UIPacketSystemTest>>();
 
@@ -134,7 +134,7 @@ namespace CrystalFrost.UI
             // Track creation
             if (_uiStateTracker != null)
             {
-                _uiStateTracker.TrackComponentCreated(testPanel, "TestPanel");
+                _uiStateTracker?.TrackComponentCreated(testPanel, "TestPanel");
                 _logger.LogInformation("Created test panel and tracked creation");
             }
         }
@@ -145,7 +145,7 @@ namespace CrystalFrost.UI
             {
                 bool newVisibility = !testPanel.activeSelf;
                 testPanel.SetActive(newVisibility);
-                _uiStateTracker.TrackVisibilityChanged(testPanel, "TestPanel", newVisibility);
+                _uiStateTracker?.TrackVisibilityChanged(testPanel, "TestPanel", newVisibility);
                 _logger.LogInformation($"Toggled test panel visibility to: {newVisibility}");
             }
         }
@@ -158,7 +158,7 @@ namespace CrystalFrost.UI
                 Vector2 newPosition = new Vector2(Random.Range(-100, 100), Random.Range(-50, 50));
                 rect.anchoredPosition = newPosition;
                 
-                _uiStateTracker.TrackComponentMoved(testPanel, "TestPanel");
+                _uiStateTracker?.TrackComponentMoved(testPanel, "TestPanel");
                 _logger.LogInformation($"Moved test panel to position: {newPosition}");
             }
         }
@@ -170,7 +170,7 @@ namespace CrystalFrost.UI
                 string newText = $"Updated at {System.DateTime.Now:HH:mm:ss}";
                 testLabel.text = newText;
                 
-                _uiStateTracker.TrackContentChanged(testLabel.gameObject, "TestLabel", 
+                _uiStateTracker?.TrackContentChanged(testLabel.gameObject, "TestLabel", 
                     new { NewText = newText, ChangeTime = System.DateTime.UtcNow });
                 _logger.LogInformation($"Changed test label content to: {newText}");
             }
@@ -180,7 +180,7 @@ namespace CrystalFrost.UI
         {
             if (testButton != null && _uiStateTracker != null)
             {
-                _uiStateTracker.TrackInteraction(testButton.gameObject, "TestButton", "Click", 
+                _uiStateTracker?.TrackInteraction(testButton.gameObject, "TestButton", "Click", 
                     new { ClickTime = System.DateTime.UtcNow, TestData = "Simulated click" });
                 _logger.LogInformation("Simulated button click interaction");
             }
@@ -191,7 +191,7 @@ namespace CrystalFrost.UI
             if (testPanel != null && _uiStateTracker != null)
             {
                 string componentId = $"{GetHierarchyPath(testPanel)}_{testPanel.GetInstanceID()}";
-                _uiStateTracker.TrackComponentDestroyed(componentId, "TestPanel");
+                _uiStateTracker?.TrackComponentDestroyed(componentId, "TestPanel");
                 
                 Destroy(testPanel);
                 testPanel = null;

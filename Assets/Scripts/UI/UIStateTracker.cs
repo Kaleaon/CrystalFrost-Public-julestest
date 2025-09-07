@@ -79,8 +79,16 @@ namespace CrystalFrost.UI
 
         private void Start()
         {
-            _logger = Services.GetService<ILogger<UIStateTracker>>();
-            _logger.LogInformation("UIStateTracker initialized");
+            try
+            {
+                _logger = Services.GetService<ILogger<UIStateTracker>>();
+                _logger.LogInformation("UIStateTracker initialized");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"Could not get logger service for UIStateTracker: {ex.Message}");
+                // Continue without logger - will cause NullReference warnings but functionality will work
+            }
         }
 
         /// <summary>
@@ -103,7 +111,7 @@ namespace CrystalFrost.UI
             _pendingChanges.Enqueue(packet);
             UIChangeOccurred?.Invoke(packet);
 
-            _logger.LogDebug($"Tracked component created: {componentType} ({componentId})");
+            SafeLogDebug($"Tracked component created: {componentType} ({componentId})");
         }
 
         /// <summary>
@@ -122,7 +130,7 @@ namespace CrystalFrost.UI
             _pendingChanges.Enqueue(packet);
             UIChangeOccurred?.Invoke(packet);
 
-            _logger.LogDebug($"Tracked component destroyed: {componentType} ({componentId})");
+            SafeLogDebug($"Tracked component destroyed: {componentType} ({componentId})");
         }
 
         /// <summary>
@@ -138,7 +146,7 @@ namespace CrystalFrost.UI
             _pendingChanges.Enqueue(packet);
             UIChangeOccurred?.Invoke(packet);
 
-            _logger.LogDebug($"Tracked visibility change: {componentType} ({componentId}) - {(isVisible ? "Visible" : "Hidden")}");
+            SafeLogDebug($"Tracked visibility change: {componentType} ({componentId}) - {(isVisible ? "Visible" : "Hidden")}");
         }
 
         /// <summary>
@@ -158,7 +166,7 @@ namespace CrystalFrost.UI
             _pendingChanges.Enqueue(packet);
             UIChangeOccurred?.Invoke(packet);
 
-            _logger.LogDebug($"Tracked component moved: {componentType} ({componentId})");
+            SafeLogDebug($"Tracked component moved: {componentType} ({componentId})");
         }
 
         /// <summary>
@@ -181,7 +189,7 @@ namespace CrystalFrost.UI
             _pendingChanges.Enqueue(packet);
             UIChangeOccurred?.Invoke(packet);
 
-            _logger.LogDebug($"Tracked content change: {componentType} ({componentId})");
+            SafeLogDebug($"Tracked content change: {componentType} ({componentId})");
         }
 
         /// <summary>
@@ -210,7 +218,7 @@ namespace CrystalFrost.UI
             _pendingChanges.Enqueue(packet);
             UIChangeOccurred?.Invoke(packet);
 
-            _logger.LogDebug($"Tracked interaction: {componentType} ({componentId}) - {interactionType}");
+            SafeLogDebug($"Tracked interaction: {componentType} ({componentId}) - {interactionType}");
         }
 
         /// <summary>
@@ -232,7 +240,7 @@ namespace CrystalFrost.UI
         public void ClearPendingChanges()
         {
             while (_pendingChanges.TryDequeue(out _)) { }
-            _logger.LogDebug("Cleared all pending UI changes");
+            SafeLogDebug("Cleared all pending UI changes");
         }
 
         /// <summary>
@@ -282,7 +290,7 @@ namespace CrystalFrost.UI
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Could not get current user context");
+                SafeLogWarning(ex, "Could not get current user context");
             }
 
             return "Unknown User";
@@ -294,7 +302,25 @@ namespace CrystalFrost.UI
         public void UpdateUserContext()
         {
             _currentUserContext = GetCurrentUserContext();
-            _logger.LogDebug($"Updated user context to: {_currentUserContext}");
+            SafeLogDebug($"Updated user context to: {_currentUserContext}");
+        }
+
+        /// <summary>
+        /// Safe logging methods that handle null logger
+        /// </summary>
+        private void SafeLogDebug(string message)
+        {
+            _logger?.LogDebug(message);
+        }
+
+        private void SafeLogWarning(string message)
+        {
+            _logger?.LogWarning(message);
+        }
+
+        private void SafeLogWarning(Exception ex, string message)
+        {
+            _logger?.LogWarning(ex, message);
         }
     }
 }

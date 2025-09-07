@@ -22,7 +22,7 @@ public class InventoryUI : MonoBehaviour
     private void Awake()
     {
         _logger = Services.GetService<ILogger<InventoryUI>>();
-        _uiStateTracker = Services.GetService<IUIStateTracker>();
+        _uiStateTracker = FindObjectOfType<UIStateTracker>();
     }
 
     public void TogglePanel()
@@ -34,7 +34,7 @@ public class InventoryUI : MonoBehaviour
             InventoryPanel.SetActive(newState);
             
             // Track visibility change
-            _uiStateTracker.TrackVisibilityChanged(InventoryPanel, "InventoryPanel", newState);
+            _uiStateTracker?.TrackVisibilityChanged(InventoryPanel, "InventoryPanel", newState);
             
             if (newState && !isPopulated)
             {
@@ -46,7 +46,7 @@ public class InventoryUI : MonoBehaviour
     public void PopulateInventory()
     {
         // Track population start
-        _uiStateTracker.TrackInteraction(gameObject, "InventoryUI", "PopulateStarted", null);
+        _uiStateTracker?.TrackInteraction(gameObject, "InventoryUI", "PopulateStarted", null);
         
         // Clear existing entries
         foreach (Transform child in Content)
@@ -59,7 +59,7 @@ public class InventoryUI : MonoBehaviour
         isPopulated = true;
         
         // Track population completion
-        _uiStateTracker.TrackContentChanged(gameObject, "InventoryUI", new { action = "PopulateCompleted", entryCount = inventoryEntries.Count });
+        _uiStateTracker?.TrackContentChanged(gameObject, "InventoryUI", new { action = "PopulateCompleted", entryCount = inventoryEntries.Count });
     }
 
     void CreateInventoryEntries(InventoryFolder parentFolder, int depth)
@@ -99,7 +99,7 @@ public class InventoryUI : MonoBehaviour
             CollapseFolder(folder);
             
             // Track folder collapse
-            _uiStateTracker.TrackInteraction(inventoryEntries[folder.UUID], "InventoryEntry", "FolderCollapsed", new { folderId = folder.UUID.ToString(), folderName = folder.Name });
+            _uiStateTracker?.TrackInteraction(inventoryEntries[folder.UUID], "InventoryEntry", "FolderCollapsed", new { folderId = folder.UUID.ToString(), folderName = folder.Name });
         }
         else
         {
@@ -108,7 +108,7 @@ public class InventoryUI : MonoBehaviour
             CreateInventoryEntries(folder, GetDepth(folder) + 1);
             
             // Track folder expansion
-            _uiStateTracker.TrackInteraction(inventoryEntries[folder.UUID], "InventoryEntry", "FolderExpanded", new { folderId = folder.UUID.ToString(), folderName = folder.Name });
+            _uiStateTracker?.TrackInteraction(inventoryEntries[folder.UUID], "InventoryEntry", "FolderExpanded", new { folderId = folder.UUID.ToString(), folderName = folder.Name });
         }
     }
 

@@ -28,8 +28,21 @@ public class InventoryManager : MonoBehaviour
 
 	private void Start()
 	{
-		_logger = Services.GetService<ILogger<InventoryManager>>();
-		_uiStateTracker = Services.GetService<IUIStateTracker>();
+		try
+		{
+			_logger = Services.GetService<ILogger<InventoryManager>>();
+		}
+		catch (System.Exception ex)
+		{
+			Debug.LogError($"Failed to get logger for InventoryManager: {ex.Message}");
+		}
+
+		// Find the UI state tracker in the scene
+		_uiStateTracker = FindObjectOfType<UIStateTracker>();
+		if (_uiStateTracker == null)
+		{
+			Debug.LogWarning("UIStateTracker not found in scene. UI tracking will be disabled for InventoryManager.");
+		}
 		
 		RegisterClientEvents(ClientManager.client);
 	}
@@ -346,7 +359,7 @@ public class InventoryManager : MonoBehaviour
 	public void Attach(InventoryItem item, AttachmentPoint point, bool replace)
 	{
 		// Track attachment action
-		_uiStateTracker.TrackInteraction(gameObject, "InventoryManager", "AttachItem", new { 
+		_uiStateTracker?.TrackInteraction(gameObject, "InventoryManager", "AttachItem", new { 
 			itemId = item.UUID.ToString(), 
 			itemName = item.Name, 
 			attachmentPoint = point.ToString(), 
@@ -438,7 +451,7 @@ public class InventoryManager : MonoBehaviour
 		var realItem = RealInventoryItem(item);
 		
 		// Track detachment action
-		_uiStateTracker.TrackInteraction(gameObject, "InventoryManager", "DetachItem", new { 
+		_uiStateTracker?.TrackInteraction(gameObject, "InventoryManager", "DetachItem", new { 
 			itemId = realItem.UUID.ToString(), 
 			itemName = realItem.Name 
 		});
@@ -492,7 +505,7 @@ public class InventoryManager : MonoBehaviour
 	public void ReplaceOutfit(List<InventoryItem> newOutfit)
 	{
 		// Track outfit replacement
-		_uiStateTracker.TrackInteraction(gameObject, "InventoryManager", "ReplaceOutfit", new { 
+		_uiStateTracker?.TrackInteraction(gameObject, "InventoryManager", "ReplaceOutfit", new { 
 			outfitItemCount = newOutfit.Count,
 			itemIds = newOutfit.Select(i => i.UUID.ToString()).ToArray()
 		});
@@ -579,7 +592,7 @@ public class InventoryManager : MonoBehaviour
 	public void AddToOutfit(List<InventoryItem> items, bool replace)
 	{
 		// Track outfit addition
-		_uiStateTracker.TrackInteraction(gameObject, "InventoryManager", "AddToOutfit", new { 
+		_uiStateTracker?.TrackInteraction(gameObject, "InventoryManager", "AddToOutfit", new { 
 			itemCount = items.Count,
 			replace,
 			itemIds = items.Select(i => i.UUID.ToString()).ToArray()
@@ -650,7 +663,7 @@ public class InventoryManager : MonoBehaviour
 	public void RemoveFromOutfit(List<InventoryItem> items)
 	{
 		// Track outfit removal
-		_uiStateTracker.TrackInteraction(gameObject, "InventoryManager", "RemoveFromOutfit", new { 
+		_uiStateTracker?.TrackInteraction(gameObject, "InventoryManager", "RemoveFromOutfit", new { 
 			itemCount = items.Count,
 			itemIds = items.Select(i => i.UUID.ToString()).ToArray()
 		});

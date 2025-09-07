@@ -20,7 +20,7 @@ namespace CrystalFrost.UI
         private void Awake()
         {
             _logger = Services.GetService<ILogger<InventoryUIPacketIntegrationTest>>();
-            _uiStateTracker = Services.GetService<IUIStateTracker>();
+            _uiStateTracker = FindObjectOfType<UIStateTracker>();
             _uiPacketSender = Services.GetService<IUIPacketSender>();
         }
         
@@ -57,30 +57,30 @@ namespace CrystalFrost.UI
             _logger.LogDebug("Simulating inventory UI interactions...");
             
             // Test 1: Simulate inventory window creation
-            _uiStateTracker.TrackInteraction(gameObject, "InventoryUIController", "TestWindowCreation", new { testId = System.Guid.NewGuid().ToString() });
+            _uiStateTracker?.TrackInteraction(gameObject, "InventoryUIController", "TestWindowCreation", new { testId = System.Guid.NewGuid().ToString() });
             
             // Test 2: Simulate inventory tree expansion
-            _uiStateTracker.TrackInteraction(gameObject, "InventoryTreeNode", "TestFolderExpanded", new { 
+            _uiStateTracker?.TrackInteraction(gameObject, "InventoryTreeNode", "TestFolderExpanded", new { 
                 folderId = System.Guid.NewGuid().ToString(),
                 folderName = "Test Folder",
                 depth = 1
             });
             
             // Test 3: Simulate inventory item selection
-            _uiStateTracker.TrackInteraction(gameObject, "InventoryTreeNode", "TestItemSelected", new {
+            _uiStateTracker?.TrackInteraction(gameObject, "InventoryTreeNode", "TestItemSelected", new {
                 itemId = System.Guid.NewGuid().ToString(),
                 itemName = "Test Item",
                 itemType = "InventoryWearable"
             });
             
             // Test 4: Simulate context menu action
-            _uiStateTracker.TrackInteraction(gameObject, "InventoryContextMenu", "TestWearItem", new {
+            _uiStateTracker?.TrackInteraction(gameObject, "InventoryContextMenu", "TestWearItem", new {
                 itemId = System.Guid.NewGuid().ToString(),
                 itemName = "Test Wearable"
             });
             
             // Test 5: Simulate attachment action
-            _uiStateTracker.TrackInteraction(gameObject, "InventoryManager", "TestAttachItem", new {
+            _uiStateTracker?.TrackInteraction(gameObject, "InventoryManager", "TestAttachItem", new {
                 itemId = System.Guid.NewGuid().ToString(),
                 itemName = "Test Attachment",
                 attachmentPoint = "RightHand",
@@ -108,21 +108,21 @@ namespace CrystalFrost.UI
             
             // Test InventoryWindowUI integration
             var testWindow = new GameObject("TestInventoryWindow");
-            _uiStateTracker.TrackComponentCreated(testWindow, "InventoryWindow");
-            _uiStateTracker.TrackVisibilityChanged(testWindow, "InventoryWindow", true);
+            _uiStateTracker?.TrackComponentCreated(testWindow, "InventoryWindow");
+            _uiStateTracker?.TrackVisibilityChanged(testWindow, "InventoryWindow", true);
             
             // Test InventoryUIController integration
-            _uiStateTracker.TrackInteraction(gameObject, "InventoryUIController", "CreateWindowStarted", null);
-            _uiStateTracker.TrackInteraction(gameObject, "InventoryUIController", "CreateWindowCompleted", new { windowId = testWindow.GetInstanceID() });
+            _uiStateTracker?.TrackInteraction(gameObject, "InventoryUIController", "CreateWindowStarted", null);
+            _uiStateTracker?.TrackInteraction(gameObject, "InventoryUIController", "CreateWindowCompleted", new { windowId = testWindow.GetInstanceID() });
             
             // Test InventoryUI integration
             var testPanel = new GameObject("TestInventoryPanel");
-            _uiStateTracker.TrackVisibilityChanged(testPanel, "InventoryPanel", true);
-            _uiStateTracker.TrackInteraction(testPanel, "InventoryUI", "PopulateStarted", null);
-            _uiStateTracker.TrackContentChanged(testPanel, "InventoryUI", new { action = "PopulateCompleted", entryCount = 10 });
+            _uiStateTracker?.TrackVisibilityChanged(testPanel, "InventoryPanel", true);
+            _uiStateTracker?.TrackInteraction(testPanel, "InventoryUI", "PopulateStarted", null);
+            _uiStateTracker?.TrackContentChanged(testPanel, "InventoryUI", new { action = "PopulateCompleted", entryCount = 10 });
             
             // Test InventoryManager integration
-            _uiStateTracker.TrackInteraction(gameObject, "InventoryManager", "AttachItem", new {
+            _uiStateTracker?.TrackInteraction(gameObject, "InventoryManager", "AttachItem", new {
                 itemId = System.Guid.NewGuid().ToString(),
                 itemName = "Test Manager Item",
                 attachmentPoint = "LeftHand",

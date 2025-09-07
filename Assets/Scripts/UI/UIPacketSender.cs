@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -59,8 +60,16 @@ namespace CrystalFrost.UI
 
         private void Awake()
         {
-            _logger = Services.GetService<ILogger<UIPacketSender>>();
-            _logger.LogInformation("UIPacketSender initialized");
+            try
+            {
+                _logger = Services.GetService<ILogger<UIPacketSender>>();
+                _logger.LogInformation("UIPacketSender initialized");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"Could not get logger service for UIPacketSender: {ex.Message}");
+                // Continue without logger - will cause NullReference warnings but functionality will work
+            }
         }
 
         private void Start()
@@ -69,7 +78,7 @@ namespace CrystalFrost.UI
             _uiStateTracker = FindObjectOfType<UIStateTracker>();
             if (_uiStateTracker == null)
             {
-                _logger.LogWarning("UIStateTracker not found. Creating one.");
+                SafeLogWarning("UIStateTracker not found. Creating one.");
                 var trackerGO = new GameObject("UIStateTracker");
                 _uiStateTracker = trackerGO.AddComponent<UIStateTracker>();
             }
@@ -82,12 +91,35 @@ namespace CrystalFrost.UI
         }
 
         /// <summary>
+        /// Safe logging methods that handle null logger
+        /// </summary>
+        private void SafeLogDebug(string message)
+        {
+            _logger?.LogDebug(message);
+        }
+
+        private void SafeLogInformation(string message)
+        {
+            _logger?.LogInformation(message);
+        }
+
+        private void SafeLogWarning(string message)
+        {
+            _logger?.LogWarning(message);
+        }
+
+        private void SafeLogError(Exception ex, string message)
+        {
+            _logger?.LogError(ex, message);
+        }
+
+        /// <summary>
         /// Start automatic sending of UI change packets
         /// </summary>
         private void StartAutomaticSending()
         {
             StartCoroutine(SendPendingChangesBatchCoroutine());
-            _logger.LogInformation($"Started automatic UI packet sending with interval: {batchSendInterval}s");
+            SafeLogInformation($"Started automatic UI packet sending with interval: {batchSendInterval}s");
         }
 
         /// <summary>
@@ -106,7 +138,7 @@ namespace CrystalFrost.UI
                         if (pendingChanges.Count > maxBatchSize)
                         {
                             pendingChanges = pendingChanges.GetRange(0, maxBatchSize);
-                            _logger.LogWarning($"UI change batch size limited to {maxBatchSize}. Some changes will be sent in the next batch.");
+                            SafeLogWarning($"UI change batch size limited to {maxBatchSize}. Some changes will be sent in the next batch.");
                         }
 
                         var sendTask = SendUIChangePacketBatch(pendingChanges);
@@ -117,13 +149,13 @@ namespace CrystalFrost.UI
                         // Optionally handle exceptions from the task
                         if (sendTask.IsFaulted)
                         {
-                            _logger.LogError(sendTask.Exception, "Error sending pending UI changes batch");
+                            SafeLogError(sendTask.Exception, "Error sending pending UI changes batch");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error sending pending UI changes batch");
+                    SafeLogError(ex, "Error sending pending UI changes batch");
                 }
                 yield return new WaitForSeconds(batchSendInterval);
             }
@@ -136,7 +168,7 @@ namespace CrystalFrost.UI
         {
             try
             {
-                _logger.LogDebug($"Sending UI change packet: {packet.ComponentType} - {packet.ChangeType}");
+                SafeLogDebug($"Sending UI change packet: {packet.ComponentType} - {packet.ChangeType}");
 
                 // Serialize the packet to JSON
                 string jsonData = packet.ToJson();
@@ -147,13 +179,13 @@ namespace CrystalFrost.UI
                 if (success)
                 {
                     PacketSent?.Invoke(packet);
-                    _logger.LogDebug($"Successfully sent UI change packet: {packet.PacketId}");
+                    SafeLogDebug($"Successfully sent UI change packet: {packet.PacketId}");
                 }
                 else
                 {
                     var exception = new Exception("Failed to send packet to main viewer");
                     PacketSendFailed?.Invoke(packet, exception);
-                    _logger.LogWarning($"Failed to send UI change packet: {packet.PacketId}");
+                    SafeLogWarning($"Failed to send UI change packet: {packet.PacketId}");
                 }
 
                 return success;
@@ -161,7 +193,7 @@ namespace CrystalFrost.UI
             catch (Exception ex)
             {
                 PacketSendFailed?.Invoke(packet, ex);
-                _logger.LogError(ex, $"Exception sending UI change packet: {packet.PacketId}");
+                SafeLogError(ex, $"Exception sending UI change packet: {packet.PacketId}");
                 return false;
             }
         }
@@ -178,7 +210,7 @@ namespace CrystalFrost.UI
 
             try
             {
-                _logger.LogDebug($"Sending UI change packet batch with {packets.Count} packets");
+                SafeLogDebug($"Sending UI change packet batch with {packets.Count} packets");
 
                 // Create a batch packet container
                 var batchPacket = new UIBatchPacket
@@ -201,7 +233,7 @@ namespace CrystalFrost.UI
                     {
                         PacketSent?.Invoke(packet);
                     }
-                    _logger.LogInformation($"Successfully sent UI change packet batch with {packets.Count} packets");
+                    SafeLogInformation($"Successfully sent UI change packet batch with {packets.Count} packets");
                 }
                 else
                 {
@@ -210,7 +242,7 @@ namespace CrystalFrost.UI
                     {
                         PacketSendFailed?.Invoke(packet, exception);
                     }
-                    _logger.LogWarning($"Failed to send UI change packet batch with {packets.Count} packets");
+                    SafeLogWarning($"Failed to send UI change packet batch with {packets.Count} packets");
                 }
 
                 return success;
@@ -221,7 +253,7 @@ namespace CrystalFrost.UI
                 {
                     PacketSendFailed?.Invoke(packet, ex);
                 }
-                _logger.LogError(ex, $"Exception sending UI change packet batch with {packets.Count} packets");
+                SafeLogError(ex, $"Exception sending UI change packet batch with {packets.Count} packets");
                 return false;
             }
         }
@@ -256,7 +288,7 @@ namespace CrystalFrost.UI
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in SendToMainViewer");
+                SafeLogError(ex, "Error in SendToMainViewer");
                 return false;
             }
         }
@@ -281,7 +313,7 @@ namespace CrystalFrost.UI
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in SendBatchToMainViewer");
+                SafeLogError(ex, "Error in SendBatchToMainViewer");
                 return false;
             }
         }
@@ -298,11 +330,11 @@ namespace CrystalFrost.UI
                     // Send on a special channel that the main viewer monitors
                     string message = $"[CF_UI_PACKET] {jsonData}";
                     ClientManager.client.Self.Chat(message, 0, ChatType.Whisper);
-                    _logger.LogDebug($"Sent UI packet via chat: {packet.PacketId}");
+                    SafeLogDebug($"Sent UI packet via chat: {packet.PacketId}");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error sending UI packet via chat");
+                    SafeLogError(ex, "Error sending UI packet via chat");
                     throw;
                 }
             });
@@ -341,11 +373,11 @@ namespace CrystalFrost.UI
                         ClientManager.client.Self.Chat(message, 0, ChatType.Whisper);
                     }
                     
-                    _logger.LogDebug($"Sent UI packet batch via chat with {packets.Count} packets");
+                    SafeLogDebug($"Sent UI packet batch via chat with {packets.Count} packets");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error sending UI packet batch via chat");
+                    SafeLogError(ex, "Error sending UI packet batch via chat");
                     throw;
                 }
             });
@@ -358,7 +390,7 @@ namespace CrystalFrost.UI
         {
             await Task.Run(() =>
             {
-                _logger.LogInformation($"[UI_PACKET_TO_MAIN_VIEWER] {jsonData}");
+                SafeLogInformation($"[UI_PACKET_TO_MAIN_VIEWER] {jsonData}");
             });
         }
 
@@ -369,7 +401,7 @@ namespace CrystalFrost.UI
         {
             await Task.Run(() =>
             {
-                _logger.LogInformation($"[UI_BATCH_TO_MAIN_VIEWER] {jsonData}");
+                SafeLogInformation($"[UI_BATCH_TO_MAIN_VIEWER] {jsonData}");
             });
         }
 

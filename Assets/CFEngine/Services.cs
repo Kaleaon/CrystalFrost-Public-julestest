@@ -227,9 +227,9 @@ namespace CrystalFrost
 			// capture logging from LibMetaverse
 			_serviceCollection.AddSingleton<ILMVLogger, LMVLogger>();
 
-			// UI State Tracking and Packet Sending Services
-			_serviceCollection.AddSingleton<CrystalFrost.UI.IUIStateTracker, CrystalFrost.UI.UIStateTracker>();
-			_serviceCollection.AddSingleton<CrystalFrost.UI.IUIPacketSender, CrystalFrost.UI.UIPacketSender>();
+			// Note: UI State Tracking and Packet Sending Services are MonoBehaviour components
+			// and should be found in the scene rather than registered as singletons in DI.
+			// They will use Services.GetService<T>() to access other services as needed.
 
 			// add more registrations here.
 

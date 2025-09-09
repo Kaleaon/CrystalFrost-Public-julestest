@@ -1497,7 +1497,7 @@ public class SimManager : MonoBehaviour, IDisposable
 			if (obj.GameObject != null && obj.SimObject != null)
 			{
 				// For standard primitives, we can generate the mesh based on the primitive type
-				meshObjectManager.SetupGeneratedMesh(obj.GameObject, obj.SimObject);
+				meshObjectManager.SetupGeneratedMesh(obj.MeshHolder, obj.SimObject);
 				_log.LogDebug($"Requested generated mesh for primitive type {obj.SimObject.PrimType} (object {obj.LocalID})");
 			}
 		}

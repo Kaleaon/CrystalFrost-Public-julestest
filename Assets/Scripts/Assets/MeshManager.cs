@@ -8,6 +8,7 @@ using CrystalFrost;
 using Microsoft.Extensions.Logging;
 using CrystalFrost.Services;
 using CrystalFrost.Assets.Mesh;
+using CSJ2K;
 
 namespace CrystalFrost.Assets
 {
@@ -326,49 +327,97 @@ namespace CrystalFrost.Assets
             }
         }
 
-        private Mesh CreateSculptMesh(SculptData sculptData)
-        {
-            try
-            {
-                // This is a simplified sculpt mesh creation
-                // In a full implementation, this would decode the sculpt texture
-                // and generate proper mesh geometry based on the height map
-                
-                var mesh = new Mesh();
-                mesh.name = "SculptMesh";
-                
-                // Create a simple plane as placeholder
-                Vector3[] vertices = new Vector3[4]
-                {
-                    new Vector3(-0.5f, 0, -0.5f),
-                    new Vector3(0.5f, 0, -0.5f),
-                    new Vector3(-0.5f, 0, 0.5f),
-                    new Vector3(0.5f, 0, 0.5f)
-                };
-                
-                Vector2[] uv = new Vector2[4]
-                {
-                    new Vector2(0, 0),
-                    new Vector2(1, 0),
-                    new Vector2(0, 1),
-                    new Vector2(1, 1)
-                };
-                
-                int[] triangles = new int[6] { 0, 2, 1, 2, 3, 1 };
-                
-                mesh.vertices = vertices;
-                mesh.uv = uv;
-                mesh.triangles = triangles;
-                mesh.RecalculateNormals();
-                
-                return mesh;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to create sculpt mesh");
-                return null;
-            }
-        }
+		private Mesh CreateSculptMesh(SculptData sculptData)
+		{
+			try
+			{
+				// Decode the sculpt texture data using CSJ2K
+				RawBytesImageCreator.Register();
+				var pi = J2kImage.FromBytes(sculptData.ImageData);
+				if (pi == null)
+				{
+					_logger.LogError("Failed to decode sculpt texture: J2kImage is null");
+					return null;
+				}
+				var rawImage = pi.As<RawBytesImage>();
+				int width = rawImage.Width;
+				int height = rawImage.Height;
+				byte[] imageData = rawImage.Data;
+
+				// For now, we only support sphere sculpts
+				if (sculptData.Primitive.Sculpt.Type != SculptType.Sphere)
+				{
+					_logger.LogWarning($"Unsupported sculpt type: {sculptData.Primitive.Sculpt.Type}. Only Sphere is supported for now.");
+					return null;
+				}
+
+				// Generate the mesh from the heightmap
+				int x, y;
+				var vertices = new List<Vector3>();
+				var uvs = new List<Vector2>();
+				var triangles = new List<int>();
+
+				for (y = 0; y < height; y++)
+				{
+					for (x = 0; x < width; x++)
+					{
+						// Get height from blue channel, as is standard for SL sculpts
+						float z = imageData[(y * width + x) * 4 + 2] / 255.0f;
+
+						// Map plane to sphere
+						float lon = (x / (float)(width - 1)) * 2.0f * Mathf.PI;
+						float lat = (y / (float)(height - 1)) * Mathf.PI;
+
+						float radius = 0.5f * z; // Simple radius based on height
+
+						vertices.Add(new Vector3(
+							radius * Mathf.Sin(lat) * Mathf.Cos(lon),
+							radius * Mathf.Cos(lat),
+							radius * Mathf.Sin(lat) * Mathf.Sin(lon)
+						));
+
+						uvs.Add(new Vector2(x / (float)width, y / (float)height));
+					}
+				}
+
+				for (y = 0; y < height - 1; y++)
+				{
+					for (x = 0; x < width - 1; x++)
+					{
+						int tl = y * width + x;
+						int tr = tl + 1;
+						int bl = (y + 1) * width + x;
+						int br = bl + 1;
+
+						triangles.Add(tl);
+						triangles.Add(tr);
+						triangles.Add(bl);
+
+						triangles.Add(tr);
+						triangles.Add(br);
+						triangles.Add(bl);
+					}
+				}
+
+				var mesh = new Mesh
+				{
+					name = "SculptMesh",
+					vertices = vertices.ToArray(),
+					uv = uvs.ToArray(),
+					triangles = triangles.ToArray()
+				};
+
+				mesh.RecalculateNormals();
+				mesh.RecalculateBounds();
+
+				return mesh;
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Failed to create sculpt mesh");
+				return null;
+			}
+		}
 
         public void ClearCache()
         {

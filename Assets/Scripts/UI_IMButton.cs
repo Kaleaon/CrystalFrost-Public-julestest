@@ -13,12 +13,27 @@ public class UI_IMButton : MonoBehaviour
     public bool isContactButton = false;
     public void Click()
     {
-        if(isContactButton)
+        if (Input.GetMouseButtonUp(1)) // Right-click
         {
-            ClientManager.simManager.gameObject.GetComponent<ChatWindowUI>().SwitchToIM(uuid);
-		}
-		ClientManager.chat.SwitchTab(uuid);
-		ClientManager.soundManager.PlayUISound(new UUID("4c8c3c77-de8d-bde2-b9b8-32635e0fd4a6"));
-
+            ShowProfile();
+        }
+        else
+        {
+            if (isContactButton)
+            {
+                ClientManager.simManager.gameObject.GetComponent<ChatWindowUI>().SwitchToIM(uuid);
+            }
+            ClientManager.chat.SwitchTab(uuid);
+            ClientManager.soundManager.PlayUISound(new UUID("4c8c3c77-de8d-bde2-b9b8-32635e0fd4a6"));
+        }
 	}
+
+    public void ShowProfile()
+    {
+        ProfileManager profileManager = FindObjectOfType<ProfileManager>();
+        if (profileManager != null)
+        {
+            profileManager.RequestProfile(uuid);
+        }
+    }
 }

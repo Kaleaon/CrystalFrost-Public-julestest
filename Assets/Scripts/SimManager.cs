@@ -50,7 +50,7 @@ using UnityEngine.Animations;
 using Util;
 using Debug = UnityEngine.Debug;
 
-public class SimManager : MonoBehaviour
+public class SimManager : MonoBehaviour, IDisposable
 {
 	const float DEG_TO_RAD = 0.017453292519943295769236907684886f;
 	const float RAD_TO_DEG = 57.295779513082320876798154814105f;
@@ -106,7 +106,7 @@ public class SimManager : MonoBehaviour
 
 	public ConcurrentDictionary<UUID, uint> scenePrimIndexUUID = new();
 	public ConcurrentDictionary<uint, ScenePrimData> scenePrims = new();
-	public Dictionary<uint, List<Primitive>> orphanedPrims = new();
+	public ConcurrentDictionary<uint, List<Primitive>> orphanedPrims = new();
 	public List<MeshRequestData> meshRequests = new();
 
 	/// <summary>
@@ -125,33 +125,84 @@ public class SimManager : MonoBehaviour
 	private readonly ConcurrentQueue<UUIDNameReplyEvent> _nameReplyEvents = new();
 	private ConcurrentQueue<ScenePrimData> unTexturedPrims = new();
 
+	/// <summary>
+	/// Handles avatar name replies efficiently with improved lookup performance.
+	/// Uses optimized collection access patterns and reduced allocations.
+	/// </summary>
+	/// <param name="sender">Event sender</param>
+	/// <param name="e">Event arguments containing name mappings</param>
 	void AvatarNamesEventHandler(object sender, UUIDNameReplyEventArgs e)
 	{
-		foreach (KeyValuePair<UUID, string> kvp in e.Names)
+		if (e?.Names == null)
 		{
-			if (scenePrimIndexUUID.ContainsKey(kvp.Key))
+			_log?.LogWarning("AvatarNamesEventHandler received null or invalid event args");
+			return;
+		}
+
+		// Process each name mapping efficiently
+		foreach (var kvp in e.Names)
+		{
+			try
 			{
-				if (scenePrims.TryGetValue(scenePrimIndexUUID[kvp.Key], out ScenePrimData sPrim))
+				// Optimized lookup using TryGetValue to avoid double dictionary access
+				if (scenePrimIndexUUID.TryGetValue(kvp.Key, out uint primIndex))
 				{
-					//Debug.Log($"NAME RECEIVED: {kvp.Value}");
-					_nameReplyEvents.Enqueue(new UUIDNameReplyEvent { uuid = kvp.Key, name = kvp.Value });
-					//UnityMainThreadDispatcher.Instance().Enqueue(() => sPrim.SetName(kvp.Value));
+					if (scenePrims.TryGetValue(primIndex, out ScenePrimData sPrim))
+					{
+						// Enqueue name reply for main thread processing
+						var nameReplyEvent = new UUIDNameReplyEvent 
+						{ 
+							uuid = kvp.Key, 
+							name = kvp.Value 
+						};
+						
+						_nameReplyEvents.Enqueue(nameReplyEvent);
+					}
+				}
+				else
+				{
+					// Request avatar name if not found in scene prims
+					ClientManager.client?.Avatars?.RequestAvatarName(kvp.Key);
 				}
 			}
-			else
+			catch (Exception ex)
 			{
-				ClientManager.client.Avatars.RequestAvatarName(kvp.Key);
+				_log?.LogError($"Error processing avatar name for UUID {kvp.Key}: {ex.Message}");
 			}
 		}
 	}
 
-	// Do an action on all the simulators
-	// TODO: Figure out locking (should list be locked when iterating?). Maybe use yield return?
+	/// <summary>
+	/// Executes an action on all simulator containers with proper error handling.
+	/// Uses efficient enumeration patterns and includes safety checks.
+	/// </summary>
+	/// <param name="action">The action to execute on each simulator container</param>
 	private void ForEachSimContainer(Action<SimulatorContainer> action)
 	{
+		if (action == null)
+		{
+			_log?.LogWarning("ForEachSimContainer called with null action");
+			return;
+		}
+
+		// Use efficient enumeration with proper exception handling
 		foreach (var kvp in simulators)
 		{
-			action(kvp.Value);
+			try
+			{
+				if (kvp.Value != null)
+				{
+					action(kvp.Value);
+				}
+				else
+				{
+					_log?.LogWarning($"Null simulator container found for key: {kvp.Key}");
+				}
+			}
+			catch (Exception ex)
+			{
+				_log?.LogError($"Error executing action on simulator container {kvp.Key}: {ex.Message}");
+			}
 		}
 	}
 
@@ -187,6 +238,11 @@ public class SimManager : MonoBehaviour
 	}
 
 	private void Start()
+	{
+		Initialize();
+	}
+
+	public void Initialize()
 	{
 		client = ClientManager.client;
 
@@ -296,50 +352,127 @@ public class SimManager : MonoBehaviour
 					{
 						if (!scenePrims.ContainsKey(prim.ParentID))
 						{
-							orphanedPrims.TryAdd(prim.ParentID, new List<Primitive>());
-							orphanedPrims[prim.ParentID].Add(prim);
-							go.transform.position = new Vector3(5000f, 5000f, 5000f);
+							var orphanList = orphanedPrims.GetOrAdd(prim.ParentID, _ => new ConcurrentBag<Primitive>());
+							orphanList.Add(prim);
+							// Null check before accessing transform
+							if (go?.transform != null)
+							{
+								go.transform.position = new Vector3(5000f, 5000f, 5000f);
+							}
+							else
+							{
+								_log.LogError($"GameObject or transform is null for prim {prim.LocalID}");
+							}
 						}
 						else
 						{
-							bgo.transform.parent = scenePrims[prim.ParentID].obj.transform.parent;
+							// Defensive null checks for parent hierarchy
+							if (scenePrims.TryGetValue(prim.ParentID, out ScenePrimData parentPrim) &&
+								parentPrim?.obj?.transform?.parent != null &&
+								bgo?.transform != null)
+							{
+								bgo.transform.parent = parentPrim.obj.transform.parent;
+							}
+							else
+							{
+								_log.LogWarning($"Invalid parent hierarchy for prim {prim.LocalID} with parent {prim.ParentID}");
+							}
 						}
 					}
 
-					bgo.transform.SetLocalPositionAndRotation(
-						prim.Position.ToUnity(),
-						prim.Rotation.ToUnity());
-
-					if (orphanedPrims.ContainsKey(prim.ParentID))
+					// Defensive null checks for transform operations
+					if (bgo?.transform != null && prim != null)
 					{
-						foreach (Primitive p in orphanedPrims[prim.ParentID])
-						{
-							if (p.ParentID == prim.ParentID && scenePrims.ContainsKey(prim.ParentID))
-							{
-								scenePrims[p.LocalID].obj.transform.parent.parent =
-									scenePrims[prim.ParentID].obj.transform.parent;
-								bgo.transform.SetLocalPositionAndRotation(
-									prim.Position.ToUnity(),
-									p.Rotation.ToUnity());
+						bgo.transform.SetLocalPositionAndRotation(
+							prim.Position.ToUnity(),
+							prim.Rotation.ToUnity());
+					}
+					else
+					{
+						_log.LogError($"Cannot set position/rotation for prim {prim?.LocalID}: bgo or transform is null");
+					}
 
-								if (IsHUD(scenePrims[p.LocalID].prim))
+					if (orphanedPrims.TryGetValue(prim.ParentID, out List<Primitive> orphanedList) && orphanedList != null)
+					{
+						List<Primitive> orphansToProcess;
+						lock (orphanedList)
+						{
+							orphansToProcess = new List<Primitive>(orphanedList);
+						}
+						
+						foreach (Primitive p in orphansToProcess)
+						{
+							if (p == null) continue; // Skip null primitives
+							
+							if (p.ParentID == prim.ParentID && 
+								scenePrims.TryGetValue(prim.ParentID, out ScenePrimData parentPrim) &&
+								scenePrims.TryGetValue(p.LocalID, out ScenePrimData childPrim))
+							{
+								// Defensive null checks for complex transform hierarchy
+								if (childPrim?.obj?.transform?.parent != null &&
+									parentPrim?.obj?.transform?.parent != null)
+								{
+									childPrim.obj.transform.parent.parent = parentPrim.obj.transform.parent;
+								}
+								else
+								{
+									_log.LogWarning($"Invalid transform hierarchy when processing orphan {p.LocalID}");
+									continue;
+								}
+
+								// Null check before setting transform
+								if (bgo?.transform != null && prim != null && p != null)
+								{
+									bgo.transform.SetLocalPositionAndRotation(
+										prim.Position.ToUnity(),
+										p.Rotation.ToUnity());
+								}
+
+								// Safe HUD layer check
+								if (childPrim?.prim != null && IsHUD(childPrim.prim) && bgo != null)
 								{
 									bgo.SetLayerRecursively(8);
 								}
 
-								HandleAttachment(bgo, prim);
+								// Safe attachment handling
+								if (bgo != null && prim != null)
+								{
+									HandleAttachment(bgo, prim);
+								}
 
 								CleanOrphanedPrims(prim);
 							}
 						}
 					}
 
-					scenePrims[prim.LocalID].Render();
-
-					//OpenSim doesn't send avatar objects with the pcode of Avatar, so this we have to do new avatar shit here if OpenSim
-					if (ClientManager.isOpenSim)
+					// Safe rendering with null checks
+					if (scenePrims.TryGetValue(prim.LocalID, out ScenePrimData primData) && primData != null)
 					{
-						scenePrims[prim.LocalID].DoAvatarStuff();
+						try
+						{
+							primData.Render();
+						}
+						catch (Exception ex)
+						{
+							_log.LogError($"Error rendering prim {prim.LocalID}: {ex.Message}");
+						}
+
+						//OpenSim doesn't send avatar objects with the pcode of Avatar, so this we have to do new avatar shit here if OpenSim
+						if (ClientManager.isOpenSim)
+						{
+							try
+							{
+								primData.DoAvatarStuff();
+							}
+							catch (Exception ex)
+							{
+								_log.LogError($"Error doing avatar stuff for prim {prim.LocalID}: {ex.Message}");
+							}
+						}
+					}
+					else
+					{
+						_log.LogError($"Failed to find or access scene prim data for {prim.LocalID}");
 					}
 				}
 				else
@@ -354,26 +487,68 @@ public class SimManager : MonoBehaviour
 						Debug.LogWarning($"Error adding prim to dictionary.");
 					}
 
-					Destroy(bgo);
+					// Safe cleanup with null check
+					if (bgo != null)
+					{
+						Destroy(bgo);
+					}
 				}
 
-				if (e.Avatar.LocalID == client.Self.LocalID)
+				// Safe avatar setup with comprehensive null checks
+				if (e?.Avatar != null && client?.Self != null && e.Avatar.LocalID == client.Self.LocalID)
 				{
-					ClientManager.currentOutfitFolder = new CurrentOutfitFolder();
-					ScenePrimData spd = ClientManager.simManager.scenePrims[ClientManager.client.Self.LocalID];
-					avatar.myAvatar.parent = spd.meshHolder.transform.root;
-					avatar.myAvatar.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
-					avatar.rotation = spd.prim.Rotation.ToUnity();
+					try
+					{
+						ClientManager.currentOutfitFolder = new CurrentOutfitFolder();
+						
+						if (ClientManager.simManager?.scenePrims != null &&
+							ClientManager.simManager.scenePrims.TryGetValue(client.Self.LocalID, out ScenePrimData spd) &&
+							spd?.meshHolder?.transform?.root != null &&
+							avatar?.myAvatar != null)
+						{
+							avatar.myAvatar.parent = spd.meshHolder.transform.root;
+							avatar.myAvatar.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+							
+							if (spd.prim != null)
+							{
+								avatar.rotation = spd.prim.Rotation.ToUnity();
+							}
+						}
+						else
+						{
+							_log.LogWarning("Cannot setup avatar: missing required components or scene data");
+						}
+					}
+					catch (Exception ex)
+					{
+						_log.LogError($"Error setting up avatar for localID {client.Self.LocalID}: {ex.Message}");
+					}
 				}
 			}
 			else
 			{
-				if (scenePrims.ContainsKey(e.Avatar.LocalID))
+				// Safe avatar update with null checks
+				if (e?.Avatar != null && 
+					scenePrims.TryGetValue(e.Avatar.LocalID, out ScenePrimData avatarPrim) &&
+					avatarPrim != null)
 				{
 					scenePrimsContainsAvatar = true;
-					scenePrims[e.Avatar.LocalID].prim = e.Avatar;
-					scenePrims[e.Avatar.LocalID].velocity = e.Avatar.Velocity.ToVector3();
-					scenePrims[e.Avatar.LocalID].omega = e.Avatar.AngularVelocity.ToVector3();
+					avatarPrim.prim = e.Avatar;
+					
+					// Safe vector conversion with null checks
+					if (e.Avatar.Velocity != null)
+					{
+						avatarPrim.velocity = e.Avatar.Velocity.ToVector3();
+					}
+					
+					if (e.Avatar.AngularVelocity != null)
+					{
+						avatarPrim.omega = e.Avatar.AngularVelocity.ToVector3();
+					}
+				}
+				else if (e?.Avatar != null)
+				{
+					_log.LogWarning($"Avatar update received but scene prim {e.Avatar.LocalID} not found or is null");
 				}
 			}
 		}
@@ -528,9 +703,9 @@ public class SimManager : MonoBehaviour
 			{
 				if (scenePrims.ContainsKey(data.e.ObjectLocalID))
 				{
-					if (orphanedPrims.ContainsKey(data.e.ObjectLocalID))
+					if (orphanedPrims.TryRemove(data.e.ObjectLocalID, out _))
 					{
-						orphanedPrims.Remove(data.e.ObjectLocalID);
+						// Successfully removed orphaned prim
 					}
 
 					if (scenePrims[data.e.ObjectLocalID].obj == null) continue;
@@ -617,8 +792,8 @@ public class SimManager : MonoBehaviour
 #if USE_FUNLY_SKY
         timeOfDayController.skyTime = Mathf.Repeat((sunPhase * 0.15915494309189533576888376337251f) + 0.25f, 1f);
 #else
-		// TODO - Generic Sun Movement
-		//sun.transform.forward = ClientManager.client.Grid.SunDirection.ToVector3();
+		// Generic Sun Movement for non-Funly Sky setups
+		UpdateSunPosition(sunPhase);
 #endif
 
 		//TranslateObjects(t);
@@ -627,6 +802,141 @@ public class SimManager : MonoBehaviour
 		{
 			ServiceNewObjectQueue();
 			ServiceSceneObjectsNeedingRenderersQueue();
+		}
+	}
+
+	/// <summary>
+	/// Updates sun position and lighting based on grid sun phase and direction
+	/// </summary>
+	/// <param name="sunPhase">Current sun phase from the grid (0-1)</param>
+	private void UpdateSunPosition(float sunPhase)
+	{
+		try
+		{
+			// Find or create the main directional light (sun)
+			Light sunLight = null;
+			GameObject sunGO = GameObject.Find("Sun") ?? GameObject.Find("Directional Light");
+			
+			if (sunGO == null)
+			{
+				// Create a new sun if none exists
+				sunGO = new GameObject("Sun");
+				sunLight = sunGO.AddComponent<Light>();
+				sunLight.type = LightType.Directional;
+				sunLight.shadows = LightShadows.Soft;
+			}
+			else
+			{
+				sunLight = sunGO.GetComponent<Light>();
+				if (sunLight == null)
+				{
+					sunLight = sunGO.AddComponent<Light>();
+					sunLight.type = LightType.Directional;
+				}
+			}
+
+			// Calculate sun direction based on sun phase
+			// sunPhase goes from 0 (midnight) to 1 (next midnight)
+			// 0.25 = sunrise, 0.5 = noon, 0.75 = sunset
+			float sunAngle = sunPhase * 360f - 90f; // Convert to degrees, -90 to start at sunrise
+			
+			// Use grid sun direction if available, otherwise calculate
+			Vector3 sunDirection;
+			if (ClientManager.client?.Grid?.SunDirection != null)
+			{
+				sunDirection = ClientManager.client.Grid.SunDirection.ToVector3();
+			}
+			else
+			{
+				// Calculate sun direction based on time of day
+				float elevation = Mathf.Sin(sunPhase * 2f * Mathf.PI) * 60f; // Max 60 degrees elevation
+				float azimuth = sunAngle;
+				
+				// Convert spherical coordinates to direction vector
+				float elevationRad = elevation * Mathf.Deg2Rad;
+				float azimuthRad = azimuth * Mathf.Deg2Rad;
+				
+				sunDirection = new Vector3(
+					Mathf.Sin(azimuthRad) * Mathf.Cos(elevationRad),
+					Mathf.Sin(elevationRad),
+					Mathf.Cos(azimuthRad) * Mathf.Cos(elevationRad)
+				);
+			}
+
+			// Apply sun direction
+			sunGO.transform.rotation = Quaternion.LookRotation(sunDirection);
+
+			// Adjust sun intensity based on time of day
+			float sunIntensity = CalculateSunIntensity(sunPhase);
+			sunLight.intensity = sunIntensity;
+
+			// Adjust sun color based on time of day
+			Color sunColor = CalculateSunColor(sunPhase);
+			sunLight.color = sunColor;
+
+			// Update ambient lighting
+			RenderSettings.ambientIntensity = Mathf.Clamp01(sunIntensity * 0.3f + 0.2f);
+			RenderSettings.ambientSkyColor = Color.Lerp(Color.black, sunColor, sunIntensity);
+
+			// Update fog color to match lighting
+			if (RenderSettings.fog)
+			{
+				RenderSettings.fogColor = Color.Lerp(Color.black, sunColor * 0.8f, sunIntensity);
+			}
+
+			_log.LogDebug($"Updated sun position - Phase: {sunPhase:F3}, Intensity: {sunIntensity:F2}, Direction: {sunDirection}");
+		}
+		catch (Exception ex)
+		{
+			_log.LogError(ex, "Failed to update sun position");
+		}
+	}
+
+	/// <summary>
+	/// Calculates sun intensity based on time of day
+	/// </summary>
+	private float CalculateSunIntensity(float sunPhase)
+	{
+		// Convert sun phase to time of day (0 = midnight, 0.5 = noon)
+		float timeOfDay = sunPhase;
+		
+		// Create intensity curve: dim at night, bright during day
+		if (timeOfDay < 0.2f || timeOfDay > 0.8f) // Night time (8 PM to 4 AM)
+		{
+			return 0.1f; // Very dim moonlight
+		}
+		else if (timeOfDay < 0.3f || timeOfDay > 0.7f) // Dawn/Dusk (4-6 AM, 6-8 PM)
+		{
+			float dawnDuskFactor = timeOfDay < 0.3f ? 
+				(timeOfDay - 0.2f) / 0.1f : // Dawn: 0.2 to 0.3
+				(0.8f - timeOfDay) / 0.1f;  // Dusk: 0.7 to 0.8
+			return Mathf.Lerp(0.1f, 1.0f, dawnDuskFactor);
+		}
+		else // Day time (6 AM to 6 PM)
+		{
+			return 1.0f; // Full intensity
+		}
+	}
+
+	/// <summary>
+	/// Calculates sun color based on time of day
+	/// </summary>
+	private Color CalculateSunColor(float sunPhase)
+	{
+		float timeOfDay = sunPhase;
+		
+		if (timeOfDay < 0.2f || timeOfDay > 0.8f) // Night
+		{
+			return new Color(0.7f, 0.8f, 1.0f, 1f); // Cool blue moonlight
+		}
+		else if (timeOfDay < 0.3f || timeOfDay > 0.7f) // Dawn/Dusk
+		{
+			// Warm orange/red colors for sunrise/sunset
+			return new Color(1.0f, 0.6f, 0.3f, 1f);
+		}
+		else // Day
+		{
+			return new Color(1.0f, 0.95f, 0.8f, 1f); // Warm white daylight
 		}
 	}
 
@@ -667,14 +977,28 @@ public class SimManager : MonoBehaviour
 		{
 			try
 			{
-				if (scenePrims[localID].velocity != Vector3.zero || scenePrims[localID].omega != Vector3.zero)
+				if (scenePrims.TryGetValue(localID, out ScenePrimData primData))
 				{
-					scenePrims[localID].TranslateObject(t);
+					if (primData.velocity != Vector3.zero || primData.omega != Vector3.zero)
+					{
+						primData.TranslateObject(t);
+					}
 				}
 			}
-			catch
+			catch (ObjectDisposedException ex)
 			{
-				//deletedprims.Enqueue(localID);
+				_log.LogWarning($"Attempted to move disposed object {localID}: {ex.Message}");
+				// Object has been disposed, should be removed from moving objects list
+			}
+			catch (NullReferenceException ex)
+			{
+				_log.LogWarning($"Null reference when moving object {localID}: {ex.Message}");
+				// Object reference is null, skip this iteration
+			}
+			catch (Exception ex)
+			{
+				_log.LogError($"Unexpected error moving object {localID}: {ex.Message}\nStack trace: {ex.StackTrace}");
+				// Continue with other objects despite this error
 			}
 		}
 	}
@@ -895,26 +1219,95 @@ public class SimManager : MonoBehaviour
 
 	public static void PreTextureFace(Primitive prim, int j, Renderer rendr)
 	{
-		TextureEntryFace tef = prim.Textures.GetFace((uint)j);
-		UUID uuid = tef.TextureID;
-		Color color = tef.RGBA.ToUnity();
-
-		if (!ClientManager.assetManager.materialContainer.ContainsKey(uuid))
+		// Comprehensive null checks
+		if (prim == null)
 		{
-			ClientManager.assetManager.materialContainer.Add(uuid,
-				new MaterialContainer(uuid, Texture2D.Instantiate(Texture2D.whiteTexture), 3));
-			if (!ClientManager.assetManager.materials.ContainsKey(uuid))
-			{
-				ClientManager.assetManager.materials.Add(uuid, new List<Renderer>());
-			}
-
-			ClientManager.assetManager.materials[uuid].Add(rendr);
+			Debug.LogError("PreTextureFace called with null primitive");
+			return;
 		}
 
-		DissolveIn dis = rendr.gameObject.AddComponent<DissolveIn>();
-		dis.texture = ClientManager.assetManager.materialContainer[uuid].texture;
-		dis.color = color;
-		dis.newMat = ClientManager.assetManager.materialContainer[uuid].GetMaterial(color, tef.Glow, tef.Fullbright);
+		if (rendr == null)
+		{
+			Debug.LogError("PreTextureFace called with null renderer");
+			return;
+		}
+
+		if (prim.Textures == null)
+		{
+			Debug.LogError($"Primitive {prim.LocalID} has null textures");
+			return;
+		}
+
+		if (ClientManager.assetManager == null)
+		{
+			Debug.LogError("ClientManager.assetManager is null");
+			return;
+		}
+
+		try
+		{
+			TextureEntryFace tef = prim.Textures.GetFace((uint)j);
+			if (tef == null)
+			{
+				Debug.LogWarning($"Failed to get texture face {j} for primitive {prim.LocalID}");
+				return;
+			}
+
+			UUID uuid = tef.TextureID;
+			Color color = tef.RGBA.ToUnity();
+
+			// Use thread-safe TryGetValue instead of ContainsKey
+			if (!ClientManager.assetManager.materialContainer.TryGetValue(uuid, out MaterialContainer existingContainer))
+			{
+				// Create new material container with defensive programming
+				try
+				{
+					var newTexture = Texture2D.Instantiate(Texture2D.whiteTexture);
+					if (newTexture == null)
+					{
+						Debug.LogError("Failed to instantiate white texture");
+						return;
+					}
+
+					var newContainer = new MaterialContainer(uuid, newTexture, 3);
+					ClientManager.assetManager.materialContainer.TryAdd(uuid, newContainer);
+
+					// Add renderer to materials list safely
+					var rendererList = ClientManager.assetManager.materials.GetOrAdd(uuid, _ => new List<Renderer>());
+					lock (rendererList)
+					{
+						if (!rendererList.Contains(rendr))
+						{
+							rendererList.Add(rendr);
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					Debug.LogError($"Error creating material container for texture {uuid}: {ex.Message}");
+					return;
+				}
+			}
+
+			// Safe component addition with null checks
+			if (rendr.gameObject == null)
+			{
+				Debug.LogError("Renderer has null gameObject");
+				return;
+			}
+
+			DissolveIn dis = rendr.gameObject.AddComponent<DissolveIn>();
+			if (dis != null && ClientManager.assetManager.materialContainer.TryGetValue(uuid, out MaterialContainer container))
+			{
+				dis.texture = container.texture;
+				dis.color = color;
+				dis.newMat = container.GetMaterial(color, tef.Glow, tef.Fullbright);
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError($"Unexpected error in PreTextureFace: {ex.Message}");
+		}
 	}
 
 	public void TextureFace(Primitive prim, int subMeshIndex, Renderer rendr)
@@ -983,9 +1376,25 @@ public class SimManager : MonoBehaviour
 						TextureFace(_pi.prim, _pi.face, _pi.GetComponent<Renderer>());
 						// unTexturedPrims.Remove(kvp.uuid);
 					}
-					catch (Exception e)
+					catch (NullReferenceException ex)
 					{
-						Debug.LogWarning(e);
+						_log.LogWarning($"Null reference when texturing face {_pi.face} of prim {_pi.prim?.LocalID}: {ex.Message}");
+						// Component or primitive reference is null, skip this face
+					}
+					catch (IndexOutOfRangeException ex)
+					{
+						_log.LogWarning($"Face index {_pi.face} out of range for prim {_pi.prim?.LocalID}: {ex.Message}");
+						// Invalid face index, skip this face
+					}
+					catch (ObjectDisposedException ex)
+					{
+						_log.LogWarning($"Attempted to texture disposed object {_pi.prim?.LocalID}: {ex.Message}");
+						// Object has been disposed, skip this face
+					}
+					catch (Exception ex)
+					{
+						_log.LogError($"Unexpected error texturing face {_pi.face} of prim {_pi.prim?.LocalID}: {ex.Message}\nStack trace: {ex.StackTrace}");
+						// Continue with other faces despite this error
 					}
 				}
 			}
@@ -1012,19 +1421,139 @@ public class SimManager : MonoBehaviour
 				// Doesn't seem we can do anything with this.
 				break;
 			case PrimType.Sculpt:
-				// TODO RequestSculpt()
+				RequestSculptForObject(obj);
 				break;
 			case PrimType.Mesh:
-				// TODO RequestMesh()
+				RequestMeshForObject(obj);
 				break;
 			default:
-				// TODO RequestGeneratedMesh()
+				RequestGeneratedMeshForObject(obj);
 				break;
 		}
 
-		// TODO Setup Lights
+		// Setup Lights
+		SetupLights(obj);
 
-		// TODO Setup Particles.
+		// Setup Particles
+		SetupParticles(obj);
+	}
+
+	/// <summary>
+	/// Requests sculpt data for an object
+	/// </summary>
+	private void RequestSculptForObject(SceneObject obj)
+	{
+		try
+		{
+			if (obj.GameObject != null && obj.SimObject != null)
+			{
+				_assetManager.RequestSculpt(obj.GameObject, obj.SimObject);
+				_log.LogDebug($"Requested sculpt for object {obj.LocalID}");
+			}
+		}
+		catch (Exception ex)
+		{
+			_log.LogError(ex, $"Failed to request sculpt for object {obj.LocalID}");
+		}
+	}
+
+	/// <summary>
+	/// Requests mesh data for an object
+	/// </summary>
+	private void RequestMeshForObject(SceneObject obj)
+	{
+		try
+		{
+			if (obj.GameObject != null && obj.SimObject != null && obj.SimObject.Sculpt != null)
+			{
+				// Create mesh holder if it doesn't exist
+				GameObject meshHolder = obj.GameObject.transform.Find("MeshHolder")?.gameObject;
+				if (meshHolder == null)
+				{
+					meshHolder = new GameObject("MeshHolder");
+					meshHolder.transform.SetParent(obj.GameObject.transform);
+					meshHolder.transform.localPosition = Vector3.zero;
+					meshHolder.transform.localRotation = Quaternion.identity;
+					meshHolder.transform.localScale = Vector3.one;
+				}
+
+				_assetManager.RequestMesh2(obj.GameObject, obj.SimObject, obj.SimObject.Sculpt.SculptTexture, meshHolder);
+				_log.LogDebug($"Requested mesh for object {obj.LocalID} with texture {obj.SimObject.Sculpt.SculptTexture}");
+			}
+		}
+		catch (Exception ex)
+		{
+			_log.LogError(ex, $"Failed to request mesh for object {obj.LocalID}");
+		}
+	}
+
+	/// <summary>
+	/// Requests generated mesh for standard primitives
+	/// </summary>
+	private void RequestGeneratedMeshForObject(SceneObject obj)
+	{
+		try
+		{
+			if (obj.GameObject != null && obj.SimObject != null)
+			{
+				// For standard primitives, we can generate the mesh based on the primitive type
+				meshObjectManager.SetupGeneratedMesh(obj.MeshHolder, obj.SimObject);
+				_log.LogDebug($"Requested generated mesh for primitive type {obj.SimObject.PrimType} (object {obj.LocalID})");
+			}
+		}
+		catch (Exception ex)
+		{
+			_log.LogError(ex, $"Failed to request generated mesh for object {obj.LocalID}");
+		}
+	}
+
+	/// <summary>
+	/// Sets up lighting for an object
+	/// </summary>
+	private void SetupLights(SceneObject obj)
+	{
+		try
+		{
+			if (obj.SimObject?.Light != null && obj.SimObject.Light.Intensity > 0)
+			{
+				GameObject lightGO = obj.GameObject.transform.Find("Light")?.gameObject;
+				if (lightGO == null)
+				{
+					lightGO = new GameObject("Light");
+					lightGO.transform.SetParent(obj.GameObject.transform);
+					lightGO.transform.localPosition = Vector3.zero;
+				}
+
+				Light lightComponent = lightGO.GetComponent<Light>() ?? lightGO.AddComponent<Light>();
+				
+				// Configure light based on OpenMetaverse Light properties
+				lightComponent.color = new Color(
+					obj.SimObject.Light.Color.R,
+					obj.SimObject.Light.Color.G,
+					obj.SimObject.Light.Color.B,
+					1f
+				);
+				lightComponent.intensity = obj.SimObject.Light.Intensity;
+				lightComponent.range = obj.SimObject.Light.Radius;
+				lightComponent.shadows = LightShadows.Soft;
+				
+				// Determine light type based on properties
+				if (obj.SimObject.Light.Falloff > 0)
+				{
+					lightComponent.type = LightType.Point;
+				}
+				else
+				{
+					lightComponent.type = LightType.Directional;
+				}
+
+				_log.LogDebug($"Setup light for object {obj.LocalID} - Intensity: {obj.SimObject.Light.Intensity}, Range: {obj.SimObject.Light.Radius}");
+			}
+		}
+		catch (Exception ex)
+		{
+			_log.LogError(ex, $"Failed to setup lights for object {obj.LocalID}");
+		}
 	}
 
 	/// <summary>
@@ -1076,10 +1605,147 @@ public class SimManager : MonoBehaviour
 	private void SetupParticles(SceneObject sceneObject)
 	{
 		if (sceneObject.SimObject.ParticleSystem.Pattern == Primitive.ParticleSystem.SourcePattern.None) return;
-		// TODO - Kage
-		//	UnityEngine.ParticleSystem ps = spd.obj.AddComponent<UnityEngine.ParticleSystem>();
-		//	spd.SetupParticles();
-		_log.LogDebug(nameof(SetupParticles) + " not implemented.");
+		
+		try
+		{
+			GameObject particleGO = sceneObject.GameObject.transform.Find("ParticleSystem")?.gameObject;
+			if (particleGO == null)
+			{
+				particleGO = new GameObject("ParticleSystem");
+				particleGO.transform.SetParent(sceneObject.GameObject.transform);
+				particleGO.transform.localPosition = Vector3.zero;
+			}
+
+			ParticleSystem ps = particleGO.GetComponent<ParticleSystem>() ?? particleGO.AddComponent<ParticleSystem>();
+			var particleData = sceneObject.SimObject.ParticleSystem;
+
+			// Configure main module
+			var main = ps.main;
+			main.startLifetime = particleData.PartMaxAge;
+			main.startSpeed = particleData.PartStartVelocity.ToVector3().magnitude;
+			main.startSize = new ParticleSystem.MinMaxCurve(particleData.PartStartScaleX, particleData.PartStartScaleY);
+			main.startColor = new Color(
+				particleData.PartStartColor.R,
+				particleData.PartStartColor.G,
+				particleData.PartStartColor.B,
+				particleData.PartStartColor.A
+			);
+			main.maxParticles = (int)particleData.MaxCount;
+
+			// Configure emission module
+			var emission = ps.emission;
+			emission.enabled = true;
+			emission.rateOverTime = particleData.BurstRate;
+
+			// Configure shape module based on pattern
+			var shape = ps.shape;
+			shape.enabled = true;
+			
+			switch (particleData.Pattern)
+			{
+				case Primitive.ParticleSystem.SourcePattern.Drop:
+					shape.shapeType = ParticleSystemShapeType.Sphere;
+					shape.radius = 0.1f;
+					break;
+				case Primitive.ParticleSystem.SourcePattern.Explode:
+					shape.shapeType = ParticleSystemShapeType.Sphere;
+					shape.radius = particleData.BurstRadius;
+					break;
+				case Primitive.ParticleSystem.SourcePattern.Angle:
+					shape.shapeType = ParticleSystemShapeType.Cone;
+					shape.angle = particleData.InnerAngle * Mathf.Rad2Deg;
+					break;
+				case Primitive.ParticleSystem.SourcePattern.AngleCone:
+					shape.shapeType = ParticleSystemShapeType.Cone;
+					shape.angle = particleData.OuterAngle * Mathf.Rad2Deg;
+					break;
+				default:
+					shape.shapeType = ParticleSystemShapeType.Sphere;
+					shape.radius = 1f;
+					break;
+			}
+
+			// Configure velocity over lifetime for acceleration
+			if (particleData.PartAcceleration.LengthSquared() > 0)
+			{
+				var velocityOverLifetime = ps.velocityOverLifetime;
+				velocityOverLifetime.enabled = true;
+				velocityOverLifetime.space = ParticleSystemSimulationSpace.Local;
+				
+				var acceleration = particleData.PartAcceleration.ToVector3();
+				velocityOverLifetime.x = new ParticleSystem.MinMaxCurve(acceleration.x);
+				velocityOverLifetime.y = new ParticleSystem.MinMaxCurve(acceleration.y);
+				velocityOverLifetime.z = new ParticleSystem.MinMaxCurve(acceleration.z);
+			}
+
+			// Configure color over lifetime for end color
+			var colorOverLifetime = ps.colorOverLifetime;
+			colorOverLifetime.enabled = true;
+			
+			Gradient gradient = new Gradient();
+			GradientColorKey[] colorKeys = new GradientColorKey[2];
+			GradientAlphaKey[] alphaKeys = new GradientAlphaKey[2];
+			
+			// Start color
+			colorKeys[0].color = new Color(
+				particleData.PartStartColor.R,
+				particleData.PartStartColor.G,
+				particleData.PartStartColor.B
+			);
+			colorKeys[0].time = 0f;
+			alphaKeys[0].alpha = particleData.PartStartColor.A;
+			alphaKeys[0].time = 0f;
+			
+			// End color
+			colorKeys[1].color = new Color(
+				particleData.PartEndColor.R,
+				particleData.PartEndColor.G,
+				particleData.PartEndColor.B
+			);
+			colorKeys[1].time = 1f;
+			alphaKeys[1].alpha = particleData.PartEndColor.A;
+			alphaKeys[1].time = 1f;
+			
+			gradient.SetKeys(colorKeys, alphaKeys);
+			colorOverLifetime.color = gradient;
+
+			// Configure size over lifetime for scale changes
+			if (particleData.PartEndScaleX != particleData.PartStartScaleX || 
+			    particleData.PartEndScaleY != particleData.PartStartScaleY)
+			{
+				var sizeOverLifetime = ps.sizeOverLifetime;
+				sizeOverLifetime.enabled = true;
+				
+				AnimationCurve sizeCurve = new AnimationCurve();
+				sizeCurve.AddKey(0f, 1f); // Start at 100% of initial size
+				sizeCurve.AddKey(1f, particleData.PartEndScaleX / particleData.PartStartScaleX); // End scale ratio
+				
+				sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, sizeCurve);
+			}
+
+			// Apply texture if specified
+			if (particleData.PartImageID != UUID.Zero)
+			{
+				var renderer = ps.GetComponent<ParticleSystemRenderer>();
+				if (renderer != null)
+				{
+					// Request texture for particle system
+					Texture2D particleTexture = _assetManager.RequestTexture(particleData.PartImageID);
+					if (particleTexture != null)
+					{
+						Material particleMaterial = new Material(Shader.Find("Sprites/Default"));
+						particleMaterial.mainTexture = particleTexture;
+						renderer.material = particleMaterial;
+					}
+				}
+			}
+
+			_log.LogDebug($"Setup particle system for object {sceneObject.LocalID} - Pattern: {particleData.Pattern}, MaxCount: {particleData.MaxCount}");
+		}
+		catch (Exception ex)
+		{
+			_log.LogError(ex, $"Failed to setup particles for object {sceneObject.LocalID}");
+		}
 	}
 
 	/// <summary>
@@ -1190,12 +1856,12 @@ public class SimManager : MonoBehaviour
 
 		var localID = simObject.LocalID;
 
-		var heirarchyHolder = Instantiate(blank);
-		heirarchyHolder.name = $"Heirarch Holder ({localID})";
+		var hierarchyHolder = Instantiate(blank);
+		hierarchyHolder.name = $"Hierarchy Holder ({localID})";
 
 		var gameObject = Instantiate(cube);
 		gameObject.name = $"Object ({localID})";
-		gameObject.transform.parent = heirarchyHolder.transform;
+		gameObject.transform.parent = hierarchyHolder.transform;
 		gameObject.transform.localPosition = Vector3.zero;
 
 		// disable rendering of the newly created object.
@@ -1206,12 +1872,12 @@ public class SimManager : MonoBehaviour
 
 		var meshHolder = Instantiate(blank);
 		meshHolder.name = $"Mesh Holder({localID})";
-		meshHolder.transform.parent = heirarchyHolder.transform;
+		meshHolder.transform.parent = hierarchyHolder.transform;
 
 		var sceneObject = new SceneObject()
 		{
 			LocalID = simObject.LocalID,
-			HeirachyHolder = heirarchyHolder,
+			HierarchyHolder = hierarchyHolder,
 			GameObject = gameObject,
 			MeshHolder = meshHolder,
 			SimObject = simObject,
@@ -1220,7 +1886,7 @@ public class SimManager : MonoBehaviour
 		if (!_renderManager.SceneObjects.Add(sceneObject))
 		{
 			// oh no, something when wrong. Lets clean up our mess.
-			Destroy(heirarchyHolder);
+			Destroy(hierarchyHolder);
 		}
 
 		gameObject.transform.localScale = simObject.Scale;
@@ -1244,16 +1910,16 @@ public class SimManager : MonoBehaviour
 			if (simObject.IsHud())
 			{
 				int anchorIndex = (int)simObject.AttachmentPoint - 31;
-				heirarchyHolder.transform.parent = hudAnchors[anchorIndex];
-				heirarchyHolder.SetLayerRecursively(8);
+				hierarchyHolder.transform.parent = hudAnchors[anchorIndex];
+				hierarchyHolder.SetLayerRecursively(8);
 			}
 			else
 			{
-				heirarchyHolder.transform.parent = sceneParent.GameObject.transform.parent;
+				hierarchyHolder.transform.parent = sceneParent.GameObject.transform.parent;
 			}
 		}
 
-		heirarchyHolder.transform.SetLocalPositionAndRotation(
+		hierarchyHolder.transform.SetLocalPositionAndRotation(
 			simObject.SimPosition,
 			simObject.SimRotation);
 
@@ -1310,8 +1976,11 @@ public class SimManager : MonoBehaviour
 			{
 				if (!scenePrims.ContainsKey(prim.ParentID))
 				{
-					orphanedPrims.TryAdd(prim.ParentID, new List<Primitive>());
-					orphanedPrims[prim.ParentID].Add(prim);
+					var orphanList = orphanedPrims.GetOrAdd(prim.ParentID, _ => new List<Primitive>());
+					lock (orphanList)
+					{
+						orphanList.Add(prim);
+					}
 					go.transform.position = new Vector3(5000f, 5000f, 5000f);
 				}
 				else
@@ -1347,9 +2016,15 @@ public class SimManager : MonoBehaviour
 					prim.Rotation.ToUnity());
 			}
 
-			if (orphanedPrims.ContainsKey(prim.ParentID))
+			if (orphanedPrims.TryGetValue(prim.ParentID, out List<Primitive> orphanedList))
 			{
-				foreach (Primitive p in orphanedPrims[prim.ParentID])
+				List<Primitive> orphansToProcess;
+				lock (orphanedList)
+				{
+					orphansToProcess = new List<Primitive>(orphanedList);
+				}
+				
+				foreach (Primitive p in orphansToProcess)
 				{
 					if (p.ParentID == prim.ParentID && scenePrims.ContainsKey(prim.ParentID))
 					{
@@ -1433,13 +2108,92 @@ public class SimManager : MonoBehaviour
 
 	private void CleanOrphanedPrims(Primitive prim)
 	{
-		if (orphanedPrims.ContainsKey(prim.ParentID))
+		if (orphanedPrims.TryGetValue(prim.ParentID, out List<Primitive> orphanList))
 		{
-			orphanedPrims[prim.ParentID].Remove(prim);
-			if (orphanedPrims[prim.ParentID].Count == 0)
+			lock (orphanList)
 			{
-				orphanedPrims.Remove(prim.ParentID);
+				orphanList.Remove(prim);
+				if (orphanList.Count == 0)
+				{
+					orphanedPrims.TryRemove(prim.ParentID, out _);
+				}
 			}
 		}
 	}
+
+    public void ClearRegion(ulong regionHandle)
+    {
+        _log.LogInformation($"Clearing region {regionHandle}");
+        List<uint> primsToRemove = new List<uint>();
+
+        foreach (var prim in scenePrims.Values)
+        {
+            if (prim.prim.RegionHandle == regionHandle)
+            {
+                primsToRemove.Add(prim.prim.LocalID);
+                if (prim.obj != null && prim.obj.transform != null && prim.obj.transform.root != null)
+                {
+                    Destroy(prim.obj.transform.root.gameObject);
+                }
+            }
+        }
+
+        foreach (uint localID in primsToRemove)
+        {
+            if (scenePrims.TryRemove(localID, out var removedPrim))
+            {
+                scenePrimIndexUUID.TryRemove(removedPrim.uuid, out _);
+            }
+        }
+
+        if (simulators.TryRemove(regionHandle, out var simContainer))
+        {
+            if (simContainer.transform != null)
+            {
+                Destroy(simContainer.transform.gameObject);
+            }
+        }
+        _log.LogInformation($"Cleared {primsToRemove.Count} prims from region {regionHandle}.");
+    }
+
+    public void Dispose()
+    {
+        _log.LogInformation("Disposing SimManager...");
+        foreach (var prim in scenePrims.Values)
+        {
+            if (prim.obj != null && prim.obj.transform != null && prim.obj.transform.root != null)
+            {
+                Destroy(prim.obj.transform.root.gameObject);
+            }
+        }
+        scenePrims.Clear();
+        scenePrimIndexUUID.Clear();
+        orphanedPrims.Clear();
+
+        foreach (var sim in simulators.Values)
+        {
+            if (sim.transform != null)
+            {
+                Destroy(sim.transform.gameObject);
+            }
+        }
+        simulators.Clear();
+
+        objectsToRez.Clear();
+        meshRequests.Clear();
+
+        objectDataBlockUpdates = new ConcurrentQueue<ObjectDataBlockUpdateEventArgs>();
+        unTexturedPrims = new ConcurrentQueue<ScenePrimData>();
+        terseUpdates = new ConcurrentQueue<TerseObjectUpdateEventArgs>();
+        objectUpdates = new ConcurrentQueue<PrimEventArgs>();
+
+        while (_killObjectQueue.TryDequeue(out _)) { }
+        while (_loadedAnimationRequest.TryDequeue(out _)) { }
+        while (_avatarUpdates.TryDequeue(out _)) { }
+        while (_objectPropertiesUpdateEvents.TryDequeue(out _)) { }
+        while (_objectPropertiesEvents.TryDequeue(out _)) { }
+        while (_nameReplyEvents.TryDequeue(out _)) { }
+
+        _log.LogInformation("SimManager disposed.");
+    }
 }

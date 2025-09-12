@@ -7,6 +7,8 @@ using Unity.VisualScripting;
 using UnityEngine;
 using static CrystalFrost.CFAssetManager;
 using CrystalFrost.Assets.Animation;
+using OpenMetaverse;
+using OpenMetaverse.Rendering;
 
 
 public class MeshObjectManager : MonoBehaviour
@@ -309,6 +311,81 @@ public class MeshObjectManager : MonoBehaviour
 		return go;
 	}
 
+	public void SetupGeneratedMesh(GameObject meshHolder, Primitive prim)
+	{
+		FacetedMesh fmesh = PrimMesher.CreatePrimMesh(prim, DetailLevel.Highest);
+		if (fmesh == null || fmesh.Faces == null || fmesh.Faces.Count == 0)
+		{
+			return;
+		}
 
+		List<Renderer> renderers = new List<Renderer>();
+		for (int i = 0; i < fmesh.Faces.Count; i++)
+		{
+			Face face = fmesh.Faces[i];
+			if (face.Vertices.Count < 3) continue;
+
+			// Convert Face to RawMeshData
+			var rmd = new RawMeshData
+			{
+				Position = face.Vertices.Select(v => v.Position.ToUnity()).ToList(),
+				Normal = face.Vertices.Select(v => v.Normal.ToUnity()).ToList(),
+				TexCoord = face.Vertices.Select(v => v.TexCoord.ToUnity()).ToList(),
+				Indices = face.Indices.Select(i => (int)i).ToList()
+			};
+
+			// Convert RawMeshData to Unity Mesh
+			Mesh mesh = RawMeshDataToUnityMesh(rmd);
+
+			// Create a GameObject for this face's mesh
+			var go = new GameObject($"mesh face {i}.generated");
+			var mf = go.AddComponent<MeshFilter>();
+			mf.mesh = mesh;
+			var mr = go.AddComponent<MeshRenderer>();
+
+			go.transform.parent = meshHolder.transform;
+			go.transform.localPosition = Vector3.zero;
+			go.transform.localScale = Vector3.one;
+			go.transform.localRotation = Quaternion.identity;
+
+			PrimInfo pi = go.AddComponent<PrimInfo>();
+			pi.face = i;
+			pi.localID = prim.LocalID;
+			pi.uuid = prim.ID;
+			pi.prim = prim;
+
+			if (mf.mesh.vertices.Distinct().Count() >= 3)
+			{
+				var mc = go.AddComponent<MeshCollider>();
+				mc.cookingOptions = MeshColliderCookingOptions.None;
+				mc.sharedMesh = mf.mesh;
+				mc.enabled = true;
+			}
+
+			SimManager.PreTextureFace(prim, i, mr);
+			renderers.Add(mr);
+		}
+
+		var group = meshHolder.GetComponent<LODGroup>();
+		if (group == null)
+		{
+			group = meshHolder.AddComponent<LODGroup>();
+		}
+		group.SetLODs(new LOD[] { new LOD(0.5f, renderers.ToArray()) });
+		group.RecalculateBounds();
+		group.fadeMode = LODFadeMode.SpeedTree;
+		group.animateCrossFading = true;
+	}
+
+	private Mesh RawMeshDataToUnityMesh(RawMeshData rmd)
+	{
+		Mesh mesh = new Mesh();
+		mesh.SetVertices(rmd.Position);
+		mesh.SetNormals(rmd.Normal);
+		mesh.SetUVs(0, rmd.TexCoord);
+		mesh.SetTriangles(rmd.Indices, 0);
+		mesh.RecalculateBounds();
+		return mesh;
+	}
 
 }

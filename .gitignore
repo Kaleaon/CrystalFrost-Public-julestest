@@ -95,3 +95,7 @@ CrystalFrost Patreon Build 4 Source Snapshot.7z
 # Environment files
 *.env
 *.env.*
+-e 
+# Environment files
+*.env
+*.env.*

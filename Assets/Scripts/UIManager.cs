@@ -1,9 +1,128 @@
+/*
+ * Crystal Frost Second Life Viewer - Unified User Interface Manager
+ * 
+ * SYSTEM OVERVIEW:
+ * ================
+ * This is the central UI management system for the Crystal Frost Second Life viewer,
+ * providing unified control over all user interface elements, window management,
+ * status displays, notifications, and user interaction coordination. The system
+ * serves as the primary interface controller that orchestrates the entire user experience.
+ * 
+ * ARCHITECTURE:
+ * =============
+ * - Unity MonoBehaviour component serving as UI coordination hub
+ * - Centralized window and panel management system
+ * - Real-time status monitoring and display updates
+ * - Integrated notification and alert system
+ * - Context-sensitive menu and interaction management
+ * - Responsive UI adaptation and layout management
+ * - Cross-system communication and event coordination
+ * 
+ * KEY FEATURES:
+ * =============
+ * 1. UNIFIED WINDOW MANAGEMENT:
+ *    - Centralized control over all viewer windows
+ *    - Modal dialog coordination and z-order management
+ *    - Window state persistence and restoration
+ *    - Dynamic window sizing and positioning
+ *    - Multi-monitor support and workspace management
+ * 
+ * 2. REAL-TIME STATUS DISPLAY:
+ *    - Avatar position and region information
+ *    - Connection status and network health
+ *    - Performance metrics (FPS, bandwidth)
+ *    - L$ balance and economic information
+ *    - Health and avatar status indicators
+ * 
+ * 3. INTERACTIVE MINIMAP SYSTEM:
+ *    - Real-time avatar position tracking
+ *    - Interactive region navigation
+ *    - Landmark and waypoint display
+ *    - Nearby avatar and object indicators
+ *    - Clickable teleportation interface
+ * 
+ * 4. COMPREHENSIVE NOTIFICATION SYSTEM:
+ *    - Multi-priority notification queue
+ *    - Persistent and temporary alert display
+ *    - Category-based notification filtering
+ *    - User-configurable notification preferences
+ *    - Sound and visual alert integration
+ * 
+ * 5. CONTEXT MENU MANAGEMENT:
+ *    - Dynamic context menu generation
+ *    - Avatar, object, and ground interaction menus
+ *    - Permission-based menu item filtering
+ *    - Customizable menu layouts and options
+ *    - Keyboard shortcut integration
+ * 
+ * 6. QUICK ACTION TOOLBAR:
+ *    - Essential viewer functions in accessible toolbar
+ *    - Customizable button layouts and groupings
+ *    - Status indicators for toggleable features
+ *    - Keyboard shortcut display and execution
+ *    - User preference-based toolbar configuration
+ * 
+ * TECHNICAL IMPLEMENTATION:
+ * =========================
+ * - Unity UI system with Canvas and Event System integration
+ * - Coroutine-based periodic updates for performance optimization
+ * - Event-driven architecture for responsive UI updates
+ * - Memory-efficient notification queue management
+ * - Thread-safe UI updates using UnityMainThreadDispatcher
+ * - Modular component system for extensible functionality
+ * 
+ * INTEGRATION POINTS:
+ * ===================
+ * - LibreMetaverse for real-time avatar and world data
+ * - All Crystal Frost window systems (inventory, profile, etc.)
+ * - Notification system for system-wide alerts
+ * - Camera and movement systems for spatial UI elements
+ * - Audio system for notification sounds and UI feedback
+ * - Input system for keyboard shortcuts and accessibility
+ * 
+ * USER EXPERIENCE FEATURES:
+ * ==========================
+ * - Intuitive and responsive interface design
+ * - Contextual help and tooltip systems
+ * - Accessibility features and keyboard navigation
+ * - Customizable layouts and user preferences
+ * - Smooth animations and visual feedback
+ * - Multi-language support and localization
+ * 
+ * PERFORMANCE OPTIMIZATIONS:
+ * ===========================
+ * - Efficient UI update scheduling and batching
+ * - Memory pooling for temporary UI elements
+ * - Lazy loading of complex interface components
+ * - Optimized minimap rendering and updates
+ * - Smart notification pruning and queue management
+ * 
+ * USAGE:
+ * ======
+ * This component should be attached to a GameObject in the scene and serves as
+ * the central coordinator for all UI operations. It automatically initializes
+ * and manages all interface elements, providing a seamless user experience.
+ * 
+ * Author: Crystal Frost Development Team
+ * Version: 2.0
+ * Unity Compatibility: 2021.3.6f1 LTS and higher
+ * LibreMetaverse: Compatible with latest versions
+ */
+
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using OpenMetaverse;
 using System.Collections.Generic;
+using System.Collections;
+using System.Linq;
+using System;
 
+/// <summary>
+/// Unified User Interface Manager for Crystal Frost Second Life Viewer
+/// Central coordinator for all UI elements, window management, status displays,
+/// notifications, and user interaction systems with comprehensive feature integration.
+/// </summary>
 public class UIManager : MonoBehaviour
 {
     [Header("Main Menu Bar")]

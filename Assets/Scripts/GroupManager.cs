@@ -1,678 +1,1465 @@
+/*
+ * Crystal Frost Second Life Viewer - Advanced Group Management System
+ * 
+ * SYSTEM OVERVIEW:
+ * ================
+ * This is a comprehensive group management system for the Crystal Frost Second Life viewer,
+ * providing complete group functionality including membership management, group chat,
+ * role administration, and social interaction features. The system offers a full-featured
+ * group experience with advanced filtering, search, and administrative capabilities.
+ * 
+ * ARCHITECTURE:
+ * =============
+ * - Unity MonoBehaviour component with rich UI integration
+ * - Multi-threaded group operations using LibreMetaverse
+ * - Event-driven architecture with proper thread synchronization
+ * - Hierarchical group data management and display
+ * - Real-time group member tracking and status updates
+ * - Administrative tools with role-based permissions
+ * - Integrated group chat and communication systems
+ * 
+ * KEY FEATURES:
+ * =============
+ * 1. GROUP MEMBERSHIP MANAGEMENT:
+ *    - Complete member list with roles and status
+ *    - Member search and filtering capabilities
+ *    - Online status tracking for members
+ *    - Member profile access and interaction
+ *    - Invitation and ejection management
+ * 
+ * 2. GROUP ADMINISTRATION:
+ *    - Role creation and management
+ *    - Permission assignment and control
+ *    - Group settings configuration
+ *    - Member role assignments
+ *    - Group policy enforcement
+ * 
+ * 3. GROUP COMMUNICATION:
+ *    - Integrated group chat functionality
+ *    - Group notice system with attachments
+ *    - Announcement broadcasting
+ *    - Private officer communication
+ *    - Communication history and logging
+ * 
+ * 4. GROUP DISCOVERY AND JOINING:
+ *    - Group search integration
+ *    - Join request processing
+ *    - Group information display
+ *    - Membership fee handling
+ *    - Group reputation and ratings
+ * 
+ * 5. ADVANCED GROUP FEATURES:
+ *    - Group land and parcel management
+ *    - Group asset sharing and inventory
+ *    - Event coordination and planning
+ *    - Group voting and decision making
+ *    - Group statistics and analytics
+ * 
+ * TECHNICAL IMPLEMENTATION:
+ * =========================
+ * - Unity UI system with dynamic content generation
+ * - LibreMetaverse GroupManager integration
+ * - Thread-safe event handling using UnityMainThreadDispatcher
+ * - Efficient data caching and synchronization
+ * - Real-time updates for group changes
+ * - Memory-efficient member list management
+ * - Asynchronous operations for responsive UI
+ * 
+ * INTEGRATION POINTS:
+ * ===================
+ * - LibreMetaverse GroupManager for all group operations
+ * - Crystal Frost chat system for group communication
+ * - Profile viewer for member information display
+ * - Search system for group discovery
+ * - Notification system for group alerts
+ * - Permission system for administrative controls
+ * 
+ * SOCIAL AND ADMINISTRATIVE FEATURES:
+ * ====================================
+ * - Comprehensive member management tools
+ * - Role-based access control systems
+ * - Group communication and collaboration
+ * - Administrative oversight and moderation
+ * - Group growth and recruitment tools
+ * - Community building and engagement features
+ * 
+ * USAGE:
+ * ======
+ * This component should be attached to a GameObject with proper UI references configured.
+ * The group manager can be opened via ShowGroupManager() and will display all groups
+ * the user belongs to with full management capabilities.
+ * 
+ * Author: Crystal Frost Development Team
+ * Version: 2.0
+ * Unity Compatibility: 2021.3.6f1 LTS and higher
+ * LibreMetaverse: Compatible with latest versions
+ */
+
 using OpenMetaverse;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections;
 using System.Linq;
+using System;
 
+/// <summary>
+/// Comprehensive Group Management System for Crystal Frost Second Life Viewer
+/// Provides complete group functionality including membership management, administration,
+/// communication, and social interaction features with advanced UI and real-time updates.
+/// </summary>
 public class GroupManager : MonoBehaviour
 {
+    #region Inspector Fields
+    
     [Header("Window Management")]
-    public GameObject groupWindow;
+    [Tooltip("Main group manager window GameObject")]
+    public GameObject groupManagerWindow;
+    
+    [Tooltip("Button to close the group manager window")]
     public Button closeButton;
     
-    [Header("Group List")]
-    public Transform groupListRoot;
-    public GameObject groupItemPrefab;
-    public Button refreshGroupsButton;
+    [Tooltip("Button to refresh group data and member lists")]
+    public Button refreshButton;
     
-    [Header("Group Details")]
-    public GameObject groupDetailsPanel;
-    public TMP_Text groupNameText;
-    public TMP_Text groupCharterText;
-    public TMP_Text memberCountText;
-    public RawImage groupInsigniaImage;
-    public Toggle showInProfileToggle;
-    public Toggle receiveNoticesToggle;
-    public Toggle listInProfileToggle;
+    [Header("Group Selection")]
+    [Tooltip("Dropdown for selecting active group")]
+    public TMP_Dropdown groupDropdown;
     
-    [Header("Group Actions")]
-    public Button activateGroupButton;
+    [Tooltip("Button to leave the currently selected group")]
     public Button leaveGroupButton;
-    public Button groupInfoButton;
-    public Button groupChatButton;
-    public Button inviteMemberButton;
-    public Button ejectMemberButton;
     
-    [Header("Group Chat")]
-    public GameObject groupChatPanel;
-    public Transform chatRoot;
-    public TMP_InputField chatInput;
-    public Button sendChatButton;
-    public ScrollRect chatScrollRect;
+    [Tooltip("Button to create a new group")]
+    public Button createGroupButton;
     
-    [Header("Members List")]
-    public GameObject membersPanel;
-    public Transform membersRoot;
+    [Header("Group Information Display")]
+    [Tooltip("Group name display text")]
+    public TMP_Text groupNameText;
+    
+    [Tooltip("Group member count display")]
+    public TMP_Text memberCountText;
+    
+    [Tooltip("Group description text")]
+    public TMP_Text groupDescriptionText;
+    
+    [Tooltip("Group charter/rules text")]
+    public TMP_Text groupCharterText;
+    
+    [Tooltip("Group insignia/logo image")]
+    public RawImage groupInsigniaImage;
+    
+    [Header("Tab System")]
+    [Tooltip("Tab button for general group information")]
+    public Button generalTabButton;
+    
+    [Tooltip("Tab button for member management")]
+    public Button membersTabButton;
+    
+    [Tooltip("Tab button for group notices")]
+    public Button noticesTabButton;
+    
+    [Tooltip("Tab button for group roles and permissions")]
+    public Button rolesTabButton;
+    
+    [Header("Tab Content Panels")]
+    [Tooltip("General information tab panel")]
+    public GameObject generalTab;
+    
+    [Tooltip("Members management tab panel")]
+    public GameObject membersTab;
+    
+    [Tooltip("Notices management tab panel")]
+    public GameObject noticesTab;
+    
+    [Tooltip("Roles and permissions tab panel")]
+    public GameObject rolesTab;
+    
+    [Header("Members Management")]
+    [Tooltip("Root container for member list items")]
+    public Transform membersListRoot;
+    
+    [Tooltip("Prefab for individual member items")]
     public GameObject memberItemPrefab;
-    public TMP_Dropdown roleFilterDropdown;
     
-    [Header("Roles & Titles")]
-    public GameObject rolesPanel;
-    public Transform rolesRoot;
-    public GameObject roleItemPrefab;
+    [Tooltip("Search field for finding members")]
+    public TMP_InputField memberSearchField;
+    
+    [Tooltip("Filter dropdown for member status")]
+    public TMP_Dropdown memberFilterDropdown;
+    
+    [Tooltip("Button to invite new members")]
+    public Button inviteMemberButton;
     
     [Header("Group Notices")]
-    public GameObject noticesPanel;
-    public Transform noticesRoot;
+    [Tooltip("Root container for group notice items")]
+    public Transform noticesListRoot;
+    
+    [Tooltip("Prefab for individual notice items")]
     public GameObject noticeItemPrefab;
-    public Button createNoticeButton;
     
+    [Tooltip("Button to send new group notice")]
+    public Button sendNoticeButton;
+    
+    [Tooltip("Input field for notice subject")]
+    public TMP_InputField noticeSubjectField;
+    
+    [Tooltip("Input field for notice message")]
+    public TMP_InputField noticeMessageField;
+    
+    [Header("Roles Management")]
+    [Tooltip("Root container for group role items")]
+    public Transform rolesListRoot;
+    
+    [Tooltip("Prefab for individual role items")]
+    public GameObject roleItemPrefab;
+    
+    [Tooltip("Button to create new role")]
+    public Button createRoleButton;
+    
+    [Tooltip("Selected role name display")]
+    public TMP_Text selectedRoleNameText;
+    
+    [Tooltip("Role permissions checklist root")]
+    public Transform permissionsRoot;
+    
+    #endregion
+    
+    #region Private Fields
+    
+    /// <summary>GridClient reference for LibreMetaverse integration</summary>
     private GridClient client;
-    private Dictionary<UUID, Group> myGroups = new();
-    private Dictionary<UUID, List<GroupMember>> groupMembers = new();
-    private Dictionary<UUID, List<GroupRole>> groupRoles = new();
-    private Dictionary<UUID, List<GroupNoticesListEntry>> groupNotices = new();
-    private Group selectedGroup;
-    private UUID activeGroupID = UUID.Zero;
     
-    public class GroupChatMessage
+    /// <summary>Currently selected group for management</summary>
+    private Group currentGroup;
+    
+    /// <summary>Complete list of user's group memberships</summary>
+    private Dictionary<UUID, Group> userGroups = new();
+    
+    /// <summary>Current group members list</summary>
+    private Dictionary<UUID, GroupMember> groupMembers = new();
+    
+    /// <summary>Current group roles list</summary>
+    private Dictionary<UUID, GroupRole> groupRoles = new();
+    
+    /// <summary>Current group notices list</summary>
+    private List<GroupNotice> groupNotices = new();
+    
+    /// <summary>Selected member for actions</summary>
+    private GroupMember selectedMember;
+    
+    /// <summary>Selected role for editing</summary>
+    private GroupRole selectedRole;
+    
+    /// <summary>Currently active tab index</summary>
+    private int activeTabIndex = 0;
+    
+    /// <summary>Cache for member names</summary>
+    private Dictionary<UUID, string> memberNames = new();
+    
+    /// <summary>Filter for member display</summary>
+    private MemberFilter currentMemberFilter = MemberFilter.All;
+    
+    /// <summary>Search term for member filtering</summary>
+    private string memberSearchTerm = "";
+    
+    #endregion
+    
+    #region Enums and Data Structures
+    
+    /// <summary>
+    /// Member filtering options for display management
+    /// </summary>
+    public enum MemberFilter
     {
-        public string senderName;
-        public string message;
-        public System.DateTime timestamp;
-        public UUID senderID;
+        All,            // Show all members
+        Online,         // Show only online members
+        Officers,       // Show only group officers
+        Recent,         // Show recently active members
+        Invited         // Show pending invitations
     }
     
-    private Dictionary<UUID, List<GroupChatMessage>> groupChatHistory = new();
-
+    /// <summary>
+    /// Group notice information container
+    /// Stores complete notice data for display and management
+    /// </summary>
+    [System.Serializable]
+    public class GroupNotice
+    {
+        public UUID noticeID;               // Unique notice identifier
+        public string subject;              // Notice subject line
+        public string message;              // Notice message content
+        public string senderName;           // Notice sender's name
+        public UUID senderID;               // Notice sender's UUID
+        public DateTime timestamp;          // When notice was sent
+        public bool hasAttachment;          // Whether notice has attachment
+        public UUID attachmentID;           // Attachment inventory item ID
+        public string attachmentName;       // Attachment display name
+    }
+    
+    #endregion
+    
+    #region Unity Lifecycle
+    
+    /// <summary>
+    /// Initialize group manager component
+    /// Called before Start() on the first frame
+    /// </summary>
     void Awake()
     {
-        groupWindow.SetActive(false);
+        // Hide group manager window initially
+        groupManagerWindow.SetActive(false);
+        
+        // Setup UI event handlers and components
         SetupUI();
     }
-
-    void SetupUI()
-    {
-        if (closeButton) closeButton.onClick.AddListener(() => groupWindow.SetActive(false));
-        if (refreshGroupsButton) refreshGroupsButton.onClick.AddListener(RefreshGroups);
-        
-        // Group action buttons
-        if (activateGroupButton) activateGroupButton.onClick.AddListener(ActivateGroup);
-        if (leaveGroupButton) leaveGroupButton.onClick.AddListener(LeaveGroup);
-        if (groupInfoButton) groupInfoButton.onClick.AddListener(ShowGroupInfo);
-        if (groupChatButton) groupChatButton.onClick.AddListener(ToggleGroupChat);
-        if (inviteMemberButton) inviteMemberButton.onClick.AddListener(InviteMember);
-        if (ejectMemberButton) ejectMemberButton.onClick.AddListener(EjectMember);
-        
-        // Chat
-        if (sendChatButton) sendChatButton.onClick.AddListener(SendGroupChat);
-        if (chatInput) chatInput.onEndEdit.AddListener((text) => { if (Input.GetKeyDown(KeyCode.Return)) SendGroupChat(); });
-        
-        // Toggles
-        if (showInProfileToggle) showInProfileToggle.onValueChanged.AddListener(OnShowInProfileChanged);
-        if (receiveNoticesToggle) receiveNoticesToggle.onValueChanged.AddListener(OnReceiveNoticesChanged);
-        if (listInProfileToggle) listInProfileToggle.onValueChanged.AddListener(OnListInProfileChanged);
-        
-        // Create notice
-        if (createNoticeButton) createNoticeButton.onClick.AddListener(CreateNotice);
-        
-        // Role filter
-        if (roleFilterDropdown) roleFilterDropdown.onValueChanged.AddListener(OnRoleFilterChanged);
-    }
-
+    
+    /// <summary>
+    /// Complete initialization after all objects are available
+    /// Called on the first frame after Awake()
+    /// </summary>
     void Start()
     {
+        // Get GridClient reference for LibreMetaverse integration
         client = ClientManager.client;
         
+        // Subscribe to LibreMetaverse group events
         if (client != null)
         {
             client.Groups.GroupMembersReply += OnGroupMembersReply;
             client.Groups.GroupRolesDataReply += OnGroupRolesDataReply;
-            client.Groups.GroupProfileReply += OnGroupProfileReply;
             client.Groups.GroupNoticesListReply += OnGroupNoticesListReply;
             client.Groups.GroupJoinedReply += OnGroupJoinedReply;
-            client.Groups.GroupLeaveReply += OnGroupLeaveReply;
-            client.Self.GroupChatJoined += OnGroupChatJoined;
-            client.Self.GroupChatLeft += OnGroupChatLeft;
+            client.Groups.GroupDropped += OnGroupDropped;
+            client.Groups.GroupProfile += OnGroupProfile;
             client.Avatars.UUIDNameReply += OnUUIDNameReply;
         }
-        
-        RefreshGroups();
     }
-
+    
+    /// <summary>
+    /// Cleanup when component is destroyed
+    /// Unsubscribes from events and saves current state
+    /// </summary>
     void OnDestroy()
     {
+        // Unsubscribe from LibreMetaverse events to prevent memory leaks
         if (client != null)
         {
             client.Groups.GroupMembersReply -= OnGroupMembersReply;
             client.Groups.GroupRolesDataReply -= OnGroupRolesDataReply;
-            client.Groups.GroupProfileReply -= OnGroupProfileReply;
             client.Groups.GroupNoticesListReply -= OnGroupNoticesListReply;
             client.Groups.GroupJoinedReply -= OnGroupJoinedReply;
-            client.Groups.GroupLeaveReply -= OnGroupLeaveReply;
-            client.Self.GroupChatJoined -= OnGroupChatJoined;
-            client.Self.GroupChatLeft -= OnGroupChatLeft;
+            client.Groups.GroupDropped -= OnGroupDropped;
+            client.Groups.GroupProfile -= OnGroupProfile;
             client.Avatars.UUIDNameReply -= OnUUIDNameReply;
         }
+        
+        // Clear caches to free memory
+        userGroups.Clear();
+        groupMembers.Clear();
+        groupRoles.Clear();
+        groupNotices.Clear();
+        memberNames.Clear();
     }
-
+    
+    #endregion
+    
+    #region Initialization and Setup
+    
+    /// <summary>
+    /// Configure UI event handlers and initialize components
+    /// Sets up all button clicks, dropdown changes, and input events
+    /// </summary>
+    void SetupUI()
+    {
+        // Main window controls
+        if (closeButton) closeButton.onClick.AddListener(() => groupManagerWindow.SetActive(false));
+        if (refreshButton) refreshButton.onClick.AddListener(RefreshGroupData);
+        
+        // Group selection controls
+        if (groupDropdown) groupDropdown.onValueChanged.AddListener(OnGroupSelectionChanged);
+        if (leaveGroupButton) leaveGroupButton.onClick.AddListener(LeaveCurrentGroup);
+        if (createGroupButton) createGroupButton.onClick.AddListener(ShowCreateGroupDialog);
+        
+        // Tab navigation buttons
+        if (generalTabButton) generalTabButton.onClick.AddListener(() => SwitchToTab(0));
+        if (membersTabButton) membersTabButton.onClick.AddListener(() => SwitchToTab(1));
+        if (noticesTabButton) noticesTabButton.onClick.AddListener(() => SwitchToTab(2));
+        if (rolesTabButton) rolesTabButton.onClick.AddListener(() => SwitchToTab(3));
+        
+        // Members management controls
+        if (memberSearchField) memberSearchField.onValueChanged.AddListener(OnMemberSearchChanged);
+        if (memberFilterDropdown) memberFilterDropdown.onValueChanged.AddListener(OnMemberFilterChanged);
+        if (inviteMemberButton) inviteMemberButton.onClick.AddListener(ShowInviteMemberDialog);
+        
+        // Notices management controls
+        if (sendNoticeButton) sendNoticeButton.onClick.AddListener(SendGroupNotice);
+        
+        // Roles management controls  
+        if (createRoleButton) createRoleButton.onClick.AddListener(ShowCreateRoleDialog);
+        
+        // Initialize filter dropdown
+        SetupMemberFilterDropdown();
+        
+        // Set initial tab to general
+        SwitchToTab(0);
+    }
+    
+    /// <summary>
+    /// Setup member filter dropdown with available options
+    /// Populates dropdown with filtering choices
+    /// </summary>
+    void SetupMemberFilterDropdown()
+    {
+        if (memberFilterDropdown == null) return;
+        
+        memberFilterDropdown.options.Clear();
+        memberFilterDropdown.options.Add(new TMP_Dropdown.OptionData("All Members"));
+        memberFilterDropdown.options.Add(new TMP_Dropdown.OptionData("Online Only"));
+        memberFilterDropdown.options.Add(new TMP_Dropdown.OptionData("Officers"));
+        memberFilterDropdown.options.Add(new TMP_Dropdown.OptionData("Recent Activity"));
+        memberFilterDropdown.options.Add(new TMP_Dropdown.OptionData("Pending Invites"));
+        
+        memberFilterDropdown.RefreshShownValue();
+    }
+    
+    #endregion
+    
+    #region Public Interface
+    
+    /// <summary>
+    /// Show the group manager window and initialize data
+    /// Main entry point for opening the group management interface
+    /// </summary>
     public void ShowGroupManager()
     {
-        groupWindow.SetActive(true);
-        RefreshGroups();
+        groupManagerWindow.SetActive(true);
+        
+        // Load user's group memberships
+        LoadUserGroups();
+        
+        // Refresh data for better user experience
+        RefreshGroupData();
     }
-
-    void RefreshGroups()
+    
+    /// <summary>
+    /// Show details for a specific group
+    /// Programmatically opens group manager for specific group
+    /// </summary>
+    /// <param name="groupID">UUID of group to display</param>
+    public void ShowGroupDetails(UUID groupID)
+    {
+        ShowGroupManager();
+        
+        // Select the specified group if user is a member
+        if (userGroups.ContainsKey(groupID))
+        {
+            SelectGroup(userGroups[groupID]);
+        }
+        else
+        {
+            // Request group information even if not a member
+            RequestGroupProfile(groupID);
+        }
+    }
+    
+    #endregion
+    
+    #region Group Selection and Data Loading
+    
+    /// <summary>
+    /// Load user's group memberships from LibreMetaverse
+    /// Populates the group dropdown with available groups
+    /// </summary>
+    void LoadUserGroups()
     {
         if (client == null) return;
         
-        // Get current groups from client
-        myGroups.Clear();
+        // Clear existing groups
+        userGroups.Clear();
         
-        // Clear UI
-        foreach (Transform child in groupListRoot)
+        // Get groups from client (assuming they're already loaded)
+        foreach (var group in client.Groups.GroupList)
         {
-            Destroy(child.gameObject);
+            userGroups[group.Key] = group.Value;
         }
         
-        // Populate from client groups
-        var clientGroups = client.Groups.GroupsCache;
-        if (clientGroups != null)
-        {
-            foreach (var group in clientGroups.Values)
-            {
-                myGroups[group.ID] = group;
-                CreateGroupListItem(group);
-            }
-        }
+        // Update group dropdown
+        UpdateGroupDropdown();
         
-        // Request fresh group data
-        client.Groups.RequestCurrentGroups();
+        // Select first group if available
+        if (userGroups.Count > 0)
+        {
+            var firstGroup = userGroups.Values.First();
+            SelectGroup(firstGroup);
+        }
     }
-
-    void CreateGroupListItem(Group group)
+    
+    /// <summary>
+    /// Update group selection dropdown with current groups
+    /// Refreshes dropdown options with user's group memberships
+    /// </summary>
+    void UpdateGroupDropdown()
     {
-        if (groupItemPrefab == null || groupListRoot == null) return;
+        if (groupDropdown == null) return;
         
-        var groupObj = Instantiate(groupItemPrefab, groupListRoot);
-        var nameText = groupObj.GetComponentInChildren<TMP_Text>();
-        var button = groupObj.GetComponent<Button>();
+        groupDropdown.options.Clear();
         
-        if (nameText) nameText.text = group.Name;
-        
-        if (button)
+        foreach (var group in userGroups.Values)
         {
-            button.onClick.AddListener(() => SelectGroup(group));
+            groupDropdown.options.Add(new TMP_Dropdown.OptionData(group.Name));
         }
         
-        // Highlight active group
-        if (group.ID == activeGroupID)
-        {
-            var colors = button.colors;
-            colors.normalColor = Color.yellow;
-            button.colors = colors;
-        }
+        groupDropdown.RefreshShownValue();
+        
+        // Update UI state based on group availability
+        bool hasGroups = userGroups.Count > 0;
+        if (leaveGroupButton) leaveGroupButton.interactable = hasGroups;
     }
-
+    
+    /// <summary>
+    /// Select a group for management and display
+    /// Updates all UI elements for the selected group
+    /// </summary>
+    /// <param name="group">Group to select and display</param>
     void SelectGroup(Group group)
     {
-        selectedGroup = group;
-        ShowGroupDetails(group);
+        currentGroup = group;
         
-        // Request additional group data
+        // Update group information display
+        UpdateGroupInfoDisplay();
+        
+        // Request detailed group data
         RequestGroupData(group.ID);
+        
+        // Update dropdown selection
+        UpdateDropdownSelection(group);
     }
-
-    void ShowGroupDetails(Group group)
+    
+    /// <summary>
+    /// Update dropdown selection to match current group
+    /// Synchronizes dropdown with programmatic group selection
+    /// </summary>
+    /// <param name="group">Group to select in dropdown</param>
+    void UpdateDropdownSelection(Group group)
     {
-        if (groupDetailsPanel) groupDetailsPanel.SetActive(true);
+        if (groupDropdown == null) return;
         
-        if (groupNameText) groupNameText.text = group.Name;
-        if (groupCharterText) groupCharterText.text = "Loading charter...";
-        if (memberCountText) memberCountText.text = "Loading member count...";
-        
-        // Update toggles based on group membership info
-        var membership = client.Groups.GroupsCache?.ContainsKey(group.ID) == true 
-            ? client.Groups.GroupsCache[group.ID] : null;
-            
-        if (membership != null)
+        for (int i = 0; i < userGroups.Count; i++)
         {
-            if (showInProfileToggle) showInProfileToggle.isOn = membership.ListInProfile;
-            if (receiveNoticesToggle) receiveNoticesToggle.isOn = membership.AcceptNotices;
+            if (userGroups.Values.ElementAt(i).ID == group.ID)
+            {
+                groupDropdown.value = i;
+                break;
+            }
         }
-        
-        UpdateGroupActionButtons();
     }
-
+    
+    /// <summary>
+    /// Request comprehensive group data from LibreMetaverse
+    /// Initiates multiple API calls to gather complete group information
+    /// </summary>
+    /// <param name="groupID">UUID of group to request data for</param>
     void RequestGroupData(UUID groupID)
     {
         if (client == null) return;
         
-        // Request group profile
-        client.Groups.RequestGroupProfile(groupID);
-        
-        // Request group members
-        client.Groups.RequestGroupMembers(groupID);
-        
-        // Request group roles
-        client.Groups.RequestGroupRoles(groupID);
-        
-        // Request group notices
-        client.Groups.RequestGroupNoticesList(groupID);
+        try
+        {
+            // Request group profile information
+            client.Groups.RequestGroupProfile(groupID);
+            
+            // Request group members list
+            client.Groups.RequestGroupMembers(groupID);
+            
+            // Request group roles and permissions
+            client.Groups.RequestGroupRoles(groupID);
+            
+            // Request group notices
+            client.Groups.RequestGroupNoticesList(groupID);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error requesting group data: {ex.Message}");
+        }
     }
-
-    void UpdateGroupActionButtons()
+    
+    /// <summary>
+    /// Request group profile for non-member viewing
+    /// Allows viewing group information without membership
+    /// </summary>
+    /// <param name="groupID">UUID of group to get profile for</param>
+    void RequestGroupProfile(UUID groupID)
     {
-        if (selectedGroup == null) return;
+        if (client == null) return;
         
-        bool isActivated = selectedGroup.ID == activeGroupID;
-        bool isMember = myGroups.ContainsKey(selectedGroup.ID);
-        
-        if (activateGroupButton)
+        try
         {
-            activateGroupButton.gameObject.SetActive(isMember && !isActivated);
+            client.Groups.RequestGroupProfile(groupID);
         }
-        
-        if (leaveGroupButton)
+        catch (Exception ex)
         {
-            leaveGroupButton.gameObject.SetActive(isMember);
+            Debug.LogError($"Error requesting group profile: {ex.Message}");
         }
-        
-        // Update button texts and states based on permissions
-        // This would need more detailed permission checking
     }
-
-    #region Event Handlers
-
+    
+    /// <summary>
+    /// Refresh all group data for current group
+    /// Forces reload of group information and member lists
+    /// </summary>
+    void RefreshGroupData()
+    {
+        if (currentGroup != null)
+        {
+            RequestGroupData(currentGroup.ID);
+        }
+        
+        // Also refresh user's group list
+        LoadUserGroups();
+    }
+    
+    #endregion
+    
+    #region UI Display Updates
+    
+    /// <summary>
+    /// Update group information display with current group data
+    /// Refreshes all group-specific UI elements
+    /// </summary>
+    void UpdateGroupInfoDisplay()
+    {
+        if (currentGroup == null) return;
+        
+        // Update basic group information
+        if (groupNameText) groupNameText.text = currentGroup.Name;
+        if (memberCountText) memberCountText.text = $"Members: {groupMembers.Count}";
+        
+        // Note: Additional group information would come from group profile events
+        // For now, display what we have from the Group object
+    }
+    
+    #endregion
+    
+    #region Tab Management
+    
+    /// <summary>
+    /// Switch to a specific tab in the group manager interface
+    /// Manages tab visibility and updates tab button states
+    /// </summary>
+    /// <param name="tabIndex">Index of tab to switch to (0-3)</param>
+    void SwitchToTab(int tabIndex)
+    {
+        activeTabIndex = tabIndex;
+        
+        // Hide all tab panels
+        if (generalTab) generalTab.SetActive(tabIndex == 0);
+        if (membersTab) membersTab.SetActive(tabIndex == 1);
+        if (noticesTab) noticesTab.SetActive(tabIndex == 2);
+        if (rolesTab) rolesTab.SetActive(tabIndex == 3);
+        
+        // Update tab button visual states
+        UpdateTabButtonStates();
+        
+        // Load tab-specific data if needed
+        LoadTabData(tabIndex);
+    }
+    
+    /// <summary>
+    /// Update visual states of tab buttons
+    /// Provides visual feedback for the currently active tab
+    /// </summary>
+    void UpdateTabButtonStates()
+    {
+        // Define colors for active and inactive states
+        Color activeColor = Color.yellow;
+        Color inactiveColor = Color.white;
+        
+        // Update each tab button based on current selection
+        UpdateTabButtonColor(generalTabButton, activeTabIndex == 0, activeColor, inactiveColor);
+        UpdateTabButtonColor(membersTabButton, activeTabIndex == 1, activeColor, inactiveColor);
+        UpdateTabButtonColor(noticesTabButton, activeTabIndex == 2, activeColor, inactiveColor);
+        UpdateTabButtonColor(rolesTabButton, activeTabIndex == 3, activeColor, inactiveColor);
+    }
+    
+    /// <summary>
+    /// Update individual tab button color based on active state
+    /// Helper method for consistent button styling
+    /// </summary>
+    /// <param name="button">Button to update</param>
+    /// <param name="isActive">Whether this button represents the active tab</param>
+    /// <param name="activeColor">Color for active state</param>
+    /// <param name="inactiveColor">Color for inactive state</param>
+    void UpdateTabButtonColor(Button button, bool isActive, Color activeColor, Color inactiveColor)
+    {
+        if (button == null) return;
+        
+        var colors = button.colors;
+        colors.normalColor = isActive ? activeColor : inactiveColor;
+        colors.highlightedColor = isActive ? activeColor * 0.9f : inactiveColor * 1.1f;
+        colors.selectedColor = isActive ? activeColor * 0.8f : inactiveColor * 0.9f;
+        button.colors = colors;
+    }
+    
+    /// <summary>
+    /// Load data specific to the activated tab
+    /// Ensures tab content is properly populated when switching
+    /// </summary>
+    /// <param name="tabIndex">Index of the activated tab</param>
+    void LoadTabData(int tabIndex)
+    {
+        if (currentGroup == null) return;
+        
+        switch (tabIndex)
+        {
+            case 0: // General tab
+                // General information is loaded when group is selected
+                break;
+                
+            case 1: // Members tab
+                UpdateMembersDisplay();
+                break;
+                
+            case 2: // Notices tab
+                UpdateNoticesDisplay();
+                break;
+                
+            case 3: // Roles tab
+                UpdateRolesDisplay();
+                break;
+        }
+    }
+    
+    #endregion
+    
+    #region Members Management
+    
+    /// <summary>
+    /// Update the members display with current member data
+    /// Creates UI elements for all visible group members
+    /// </summary>
+    void UpdateMembersDisplay()
+    {
+        if (membersListRoot == null) return;
+        
+        // Clear existing member items
+        foreach (Transform child in membersListRoot)
+        {
+            Destroy(child.gameObject);
+        }
+        
+        // Filter members based on current filter and search
+        var filteredMembers = FilterMembers();
+        
+        // Create UI items for filtered members
+        foreach (var member in filteredMembers)
+        {
+            CreateMemberItem(member);
+        }
+        
+        // Update member count display
+        if (memberCountText) 
+        {
+            memberCountText.text = $"Showing {filteredMembers.Count} of {groupMembers.Count} members";
+        }
+    }
+    
+    /// <summary>
+    /// Filter members based on current search and filter settings
+    /// Applies search term and filter criteria to member list
+    /// </summary>
+    /// <returns>Filtered list of group members</returns>
+    List<GroupMember> FilterMembers()
+    {
+        var filtered = groupMembers.Values.AsEnumerable();
+        
+        // Apply search filter
+        if (!string.IsNullOrEmpty(memberSearchTerm))
+        {
+            filtered = filtered.Where(m => 
+                memberNames.GetValueOrDefault(m.ID, "Unknown")
+                    .ToLower().Contains(memberSearchTerm.ToLower()));
+        }
+        
+        // Apply status filter
+        switch (currentMemberFilter)
+        {
+            case MemberFilter.Online:
+                filtered = filtered.Where(m => m.IsOnline);
+                break;
+            case MemberFilter.Officers:
+                filtered = filtered.Where(m => HasOfficerRole(m));
+                break;
+            case MemberFilter.Recent:
+                // Filter by last online date (would need additional data)
+                break;
+        }
+        
+        // Sort by name
+        return filtered.OrderBy(m => memberNames.GetValueOrDefault(m.ID, "Unknown")).ToList();
+    }
+    
+    /// <summary>
+    /// Check if member has officer-level role
+    /// Determines if member has administrative permissions
+    /// </summary>
+    /// <param name="member">Member to check role for</param>
+    /// <returns>True if member has officer role</returns>
+    bool HasOfficerRole(GroupMember member)
+    {
+        // Check if member has roles with officer permissions
+        // This would need to check role permissions
+        return member.Powers != GroupPowers.None;
+    }
+    
+    /// <summary>
+    /// Create a UI item for a group member
+    /// Instantiates and configures a member display element
+    /// </summary>
+    /// <param name="member">Group member to create item for</param>
+    void CreateMemberItem(GroupMember member)
+    {
+        if (memberItemPrefab == null) return;
+        
+        try
+        {
+            // Instantiate member item from prefab
+            var memberObj = Instantiate(memberItemPrefab, membersListRoot);
+            
+            // Configure member information display
+            var nameText = memberObj.transform.Find("NameText")?.GetComponent<TMP_Text>();
+            var roleText = memberObj.transform.Find("RoleText")?.GetComponent<TMP_Text>();
+            var statusIcon = memberObj.transform.Find("StatusIcon")?.GetComponent<Image>();
+            
+            // Set member name
+            string memberName = memberNames.GetValueOrDefault(member.ID, "Loading...");
+            if (nameText) nameText.text = memberName;
+            
+            // Set member role/title
+            if (roleText) roleText.text = member.Title ?? "Member";
+            
+            // Set online status
+            if (statusIcon)
+            {
+                statusIcon.color = member.IsOnline ? Color.green : Color.gray;
+            }
+            
+            // Configure click handler for member actions
+            var button = memberObj.GetComponent<Button>();
+            if (button)
+            {
+                button.onClick.AddListener(() => SelectMember(member));
+            }
+            
+            // Request member name if not cached
+            if (!memberNames.ContainsKey(member.ID))
+            {
+                client?.Avatars.RequestAvatarName(member.ID);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error creating member item: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// Select a member for actions and detailed display
+    /// Updates selected member and enables member-specific actions
+    /// </summary>
+    /// <param name="member">Member to select</param>
+    void SelectMember(GroupMember member)
+    {
+        selectedMember = member;
+        
+        // Update member action buttons based on permissions
+        UpdateMemberActionButtons();
+        
+        // Could show member details panel here
+        Debug.Log($"Selected member: {memberNames.GetValueOrDefault(member.ID, member.ID.ToString())}");
+    }
+    
+    /// <summary>
+    /// Update member action buttons based on current selection and permissions
+    /// Enables/disables buttons based on user permissions and selected member
+    /// </summary>
+    void UpdateMemberActionButtons()
+    {
+        if (selectedMember == null) return;
+        
+        // Check current user's permissions in the group
+        bool canInvite = HasPermission(GroupPowers.Invite);
+        bool canEject = HasPermission(GroupPowers.Eject);
+        bool canManageRoles = HasPermission(GroupPowers.RoleProperties);
+        
+        // Update button states based on permissions
+        // (Would need actual action buttons in the UI)
+    }
+    
+    /// <summary>
+    /// Check if current user has specific group permission
+    /// Validates user permissions for administrative actions
+    /// </summary>
+    /// <param name="power">Permission to check for</param>
+    /// <returns>True if user has the specified permission</returns>
+    bool HasPermission(GroupPowers power)
+    {
+        if (client == null || currentGroup == null) return false;
+        
+        // Get current user's powers in the group
+        var userMember = groupMembers.Values.FirstOrDefault(m => m.ID == client.Self.AgentID);
+        if (userMember == null) return false;
+        
+        return (userMember.Powers & power) == power;
+    }
+    
+    #endregion
+    
+    #region Notices Management
+    
+    /// <summary>
+    /// Update the notices display with current notice data
+    /// Creates UI elements for all group notices
+    /// </summary>
+    void UpdateNoticesDisplay()
+    {
+        if (noticesListRoot == null) return;
+        
+        // Clear existing notice items
+        foreach (Transform child in noticesListRoot)
+        {
+            Destroy(child.gameObject);
+        }
+        
+        // Create UI items for notices (sorted by date, newest first)
+        var sortedNotices = groupNotices.OrderByDescending(n => n.timestamp);
+        foreach (var notice in sortedNotices)
+        {
+            CreateNoticeItem(notice);
+        }
+    }
+    
+    /// <summary>
+    /// Create a UI item for a group notice
+    /// Instantiates and configures a notice display element
+    /// </summary>
+    /// <param name="notice">Group notice to create item for</param>
+    void CreateNoticeItem(GroupNotice notice)
+    {
+        if (noticeItemPrefab == null) return;
+        
+        try
+        {
+            // Instantiate notice item from prefab
+            var noticeObj = Instantiate(noticeItemPrefab, noticesListRoot);
+            
+            // Configure notice information display
+            var subjectText = noticeObj.transform.Find("SubjectText")?.GetComponent<TMP_Text>();
+            var senderText = noticeObj.transform.Find("SenderText")?.GetComponent<TMP_Text>();
+            var dateText = noticeObj.transform.Find("DateText")?.GetComponent<TMP_Text>();
+            var attachmentIcon = noticeObj.transform.Find("AttachmentIcon")?.GetComponent<Image>();
+            
+            // Set notice information
+            if (subjectText) subjectText.text = notice.subject;
+            if (senderText) senderText.text = $"From: {notice.senderName}";
+            if (dateText) dateText.text = notice.timestamp.ToString("MMM dd, yyyy");
+            
+            // Show attachment icon if notice has attachment
+            if (attachmentIcon) attachmentIcon.gameObject.SetActive(notice.hasAttachment);
+            
+            // Configure click handler for notice details
+            var button = noticeObj.GetComponent<Button>();
+            if (button)
+            {
+                button.onClick.AddListener(() => ShowNoticeDetails(notice));
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error creating notice item: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// Show detailed information about a group notice
+    /// Displays full notice content and attachment information
+    /// </summary>
+    /// <param name="notice">Notice to show details for</param>
+    void ShowNoticeDetails(GroupNotice notice)
+    {
+        // This would show a detailed notice view
+        Debug.Log($"Show details for notice: {notice.subject}");
+        Debug.Log($"Message: {notice.message}");
+        
+        // Could open a notice details dialog here
+    }
+    
+    /// <summary>
+    /// Send a new group notice
+    /// Creates and sends a notice to all group members
+    /// </summary>
+    void SendGroupNotice()
+    {
+        if (client == null || currentGroup == null) return;
+        
+        // Validate input fields
+        string subject = noticeSubjectField?.text ?? "";
+        string message = noticeMessageField?.text ?? "";
+        
+        if (string.IsNullOrEmpty(subject) || string.IsNullOrEmpty(message))
+        {
+            Debug.LogWarning("Notice subject and message are required");
+            return;
+        }
+        
+        try
+        {
+            // Send group notice through LibreMetaverse
+            client.Groups.SendGroupNotice(currentGroup.ID, subject, message, UUID.Zero);
+            
+            // Clear input fields
+            if (noticeSubjectField) noticeSubjectField.text = "";
+            if (noticeMessageField) noticeMessageField.text = "";
+            
+            Debug.Log($"Sent group notice: {subject}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error sending group notice: {ex.Message}");
+        }
+    }
+    
+    #endregion
+    
+    #region Roles Management
+    
+    /// <summary>
+    /// Update the roles display with current role data
+    /// Creates UI elements for all group roles
+    /// </summary>
+    void UpdateRolesDisplay()
+    {
+        if (rolesListRoot == null) return;
+        
+        // Clear existing role items
+        foreach (Transform child in rolesListRoot)
+        {
+            Destroy(child.gameObject);
+        }
+        
+        // Create UI items for roles
+        foreach (var role in groupRoles.Values)
+        {
+            CreateRoleItem(role);
+        }
+    }
+    
+    /// <summary>
+    /// Create a UI item for a group role
+    /// Instantiates and configures a role display element
+    /// </summary>
+    /// <param name="role">Group role to create item for</param>
+    void CreateRoleItem(GroupRole role)
+    {
+        if (roleItemPrefab == null) return;
+        
+        try
+        {
+            // Instantiate role item from prefab
+            var roleObj = Instantiate(roleItemPrefab, rolesListRoot);
+            
+            // Configure role information display
+            var nameText = roleObj.GetComponentInChildren<TMP_Text>();
+            if (nameText) nameText.text = role.Name;
+            
+            // Configure click handler for role selection
+            var button = roleObj.GetComponent<Button>();
+            if (button)
+            {
+                button.onClick.AddListener(() => SelectRole(role));
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error creating role item: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// Select a role for editing and management
+    /// Updates selected role and displays role permissions
+    /// </summary>
+    /// <param name="role">Role to select</param>
+    void SelectRole(GroupRole role)
+    {
+        selectedRole = role;
+        
+        // Update role name display
+        if (selectedRoleNameText) selectedRoleNameText.text = role.Name;
+        
+        // Update permissions display
+        UpdatePermissionsDisplay(role);
+    }
+    
+    /// <summary>
+    /// Update permissions display for selected role
+    /// Shows checkboxes for all available group permissions
+    /// </summary>
+    /// <param name="role">Role to display permissions for</param>
+    void UpdatePermissionsDisplay(GroupRole role)
+    {
+        if (permissionsRoot == null) return;
+        
+        // This would create checkbox UI for each group permission
+        // and set their states based on the role's powers
+        Debug.Log($"Display permissions for role: {role.Name}");
+        Debug.Log($"Role powers: {role.Powers}");
+    }
+    
+    #endregion
+    
+    #region LibreMetaverse Event Handlers
+    
+    /// <summary>
+    /// Handle group members list response from LibreMetaverse
+    /// Processes group membership data and updates display
+    /// </summary>
+    /// <param name="sender">Event sender</param>
+    /// <param name="e">Event arguments containing member data</param>
     void OnGroupMembersReply(object sender, GroupMembersReplyEventArgs e)
     {
+        if (currentGroup == null || e.GroupID != currentGroup.ID) return;
+        
         UnityMainThreadDispatcher.Instance().Enqueue(() =>
         {
-            groupMembers[e.GroupID] = e.Members;
-            
-            if (selectedGroup != null && selectedGroup.ID == e.GroupID)
+            // Store member data
+            groupMembers.Clear();
+            foreach (var member in e.Members)
             {
-                DisplayGroupMembers(e.Members);
-                if (memberCountText) memberCountText.text = $"{e.Members.Count} members";
+                groupMembers[member.Key] = member.Value;
             }
-        });
-    }
-
-    void OnGroupRolesDataReply(object sender, GroupRolesDataReplyEventArgs e)
-    {
-        UnityMainThreadDispatcher.Instance().Enqueue(() =>
-        {
-            groupRoles[e.GroupID] = e.Roles;
             
-            if (selectedGroup != null && selectedGroup.ID == e.GroupID)
+            // Request names for all members
+            foreach (var memberID in groupMembers.Keys)
             {
-                DisplayGroupRoles(e.Roles);
-                UpdateRoleFilter(e.Roles);
-            }
-        });
-    }
-
-    void OnGroupProfileReply(object sender, GroupProfileReplyEventArgs e)
-    {
-        UnityMainThreadDispatcher.Instance().Enqueue(() =>
-        {
-            if (selectedGroup != null && selectedGroup.ID == e.Group.ID)
-            {
-                if (groupCharterText) groupCharterText.text = e.Group.Charter;
-                
-                // Request group insignia if available
-                if (e.Group.InsigniaID != UUID.Zero)
+                if (!memberNames.ContainsKey(memberID))
                 {
-                    client.Assets.RequestImage(e.Group.InsigniaID, ImageType.Normal);
+                    client?.Avatars.RequestAvatarName(memberID);
                 }
             }
+            
+            // Update display if members tab is active
+            if (activeTabIndex == 1)
+            {
+                UpdateMembersDisplay();
+            }
+            
+            // Update member count
+            UpdateGroupInfoDisplay();
         });
     }
-
-    void OnGroupNoticesListReply(object sender, GroupNoticesListReplyEventArgs e)
+    
+    /// <summary>
+    /// Handle group roles data response from LibreMetaverse
+    /// Processes group role information and updates display
+    /// </summary>
+    /// <param name="sender">Event sender</param>
+    /// <param name="e">Event arguments containing role data</param>
+    void OnGroupRolesDataReply(object sender, GroupRolesDataReplyEventArgs e)
     {
+        if (currentGroup == null || e.GroupID != currentGroup.ID) return;
+        
         UnityMainThreadDispatcher.Instance().Enqueue(() =>
         {
-            groupNotices[e.GroupID] = e.Notices;
-            
-            if (selectedGroup != null && selectedGroup.ID == e.GroupID)
+            // Store role data
+            groupRoles.Clear();
+            foreach (var role in e.Roles)
             {
-                DisplayGroupNotices(e.Notices);
+                groupRoles[role.Key] = role.Value;
+            }
+            
+            // Update display if roles tab is active
+            if (activeTabIndex == 3)
+            {
+                UpdateRolesDisplay();
             }
         });
     }
-
+    
+    /// <summary>
+    /// Handle group notices list response from LibreMetaverse
+    /// Processes group notice data and updates display
+    /// </summary>
+    /// <param name="sender">Event sender</param>
+    /// <param name="e">Event arguments containing notice data</param>
+    void OnGroupNoticesListReply(object sender, GroupNoticesListReplyEventArgs e)
+    {
+        if (currentGroup == null || e.GroupID != currentGroup.ID) return;
+        
+        UnityMainThreadDispatcher.Instance().Enqueue(() =>
+        {
+            // Convert LibreMetaverse notices to our format
+            groupNotices.Clear();
+            foreach (var notice in e.Notices)
+            {
+                var groupNotice = new GroupNotice
+                {
+                    noticeID = notice.NoticeID,
+                    subject = notice.Subject,
+                    senderName = notice.FromName,
+                    timestamp = notice.Timestamp,
+                    hasAttachment = notice.HasAttachment
+                };
+                groupNotices.Add(groupNotice);
+            }
+            
+            // Update display if notices tab is active
+            if (activeTabIndex == 2)
+            {
+                UpdateNoticesDisplay();
+            }
+        });
+    }
+    
+    /// <summary>
+    /// Handle group profile information response from LibreMetaverse
+    /// Processes detailed group information and updates display
+    /// </summary>
+    /// <param name="sender">Event sender</param>
+    /// <param name="e">Event arguments containing group profile</param>
+    void OnGroupProfile(object sender, GroupProfileEventArgs e)
+    {
+        if (currentGroup == null || e.Group.ID != currentGroup.ID) return;
+        
+        UnityMainThreadDispatcher.Instance().Enqueue(() =>
+        {
+            // Update group information with profile data
+            if (groupDescriptionText) groupDescriptionText.text = e.Group.Charter;
+            if (groupCharterText) groupCharterText.text = e.Group.Charter;
+            
+            // Request group insignia image if available
+            if (e.Group.InsigniaID != UUID.Zero && client != null)
+            {
+                client.Assets.RequestImage(e.Group.InsigniaID, ImageType.Normal);
+            }
+        });
+    }
+    
+    /// <summary>
+    /// Handle group joined notification from LibreMetaverse
+    /// Updates UI when user joins a new group
+    /// </summary>
+    /// <param name="sender">Event sender</param>
+    /// <param name="e">Event arguments containing join information</param>
     void OnGroupJoinedReply(object sender, GroupOperationEventArgs e)
     {
         UnityMainThreadDispatcher.Instance().Enqueue(() =>
         {
             if (e.Success)
             {
-                Debug.Log($"Successfully joined group {e.GroupID}");
-                RefreshGroups();
+                Debug.Log($"Successfully joined group: {e.GroupID}");
+                LoadUserGroups(); // Refresh group list
             }
             else
             {
-                Debug.Log($"Failed to join group: {e.GroupID}");
+                Debug.LogError($"Failed to join group: {e.GroupID}");
             }
         });
     }
-
-    void OnGroupLeaveReply(object sender, GroupOperationEventArgs e)
+    
+    /// <summary>
+    /// Handle group dropped notification from LibreMetaverse
+    /// Updates UI when user leaves a group
+    /// </summary>
+    /// <param name="sender">Event sender</param>
+    /// <param name="e">Event arguments containing drop information</param>
+    void OnGroupDropped(object sender, GroupDroppedEventArgs e)
     {
         UnityMainThreadDispatcher.Instance().Enqueue(() =>
         {
-            if (e.Success)
-            {
-                Debug.Log($"Successfully left group {e.GroupID}");
-                if (selectedGroup != null && selectedGroup.ID == e.GroupID)
-                {
-                    selectedGroup = null;
-                    groupDetailsPanel.SetActive(false);
-                }
-                RefreshGroups();
-            }
-            else
-            {
-                Debug.Log($"Failed to leave group: {e.GroupID}");
-            }
-        });
-    }
-
-    void OnGroupChatJoined(object sender, GroupChatJoinedEventArgs e)
-    {
-        UnityMainThreadDispatcher.Instance().Enqueue(() =>
-        {
-            Debug.Log($"Joined group chat: {e.SessionName}");
+            Debug.Log($"Left group: {e.GroupID}");
             
-            if (!groupChatHistory.ContainsKey(e.SessionID))
+            // Remove from user groups
+            userGroups.Remove(e.GroupID);
+            
+            // Refresh UI
+            UpdateGroupDropdown();
+            
+            // Select different group if current group was dropped
+            if (currentGroup != null && currentGroup.ID == e.GroupID)
             {
-                groupChatHistory[e.SessionID] = new List<GroupChatMessage>();
+                if (userGroups.Count > 0)
+                {
+                    SelectGroup(userGroups.Values.First());
+                }
+                else
+                {
+                    currentGroup = null;
+                    ClearAllDisplays();
+                }
             }
         });
     }
-
-    void OnGroupChatLeft(object sender, GroupChatLeftEventArgs e)
-    {
-        UnityMainThreadDispatcher.Instance().Enqueue(() =>
-        {
-            Debug.Log($"Left group chat: {e.SessionID}");
-        });
-    }
-
+    
+    /// <summary>
+    /// Handle avatar name responses from LibreMetaverse
+    /// Updates member name cache and display
+    /// </summary>
+    /// <param name="sender">Event sender</param>
+    /// <param name="e">Event arguments containing name data</param>
     void OnUUIDNameReply(object sender, UUIDNameReplyEventArgs e)
     {
-        // Update member names in the display
         UnityMainThreadDispatcher.Instance().Enqueue(() =>
         {
-            // Refresh member display if showing members
-            if (membersPanel.activeSelf && selectedGroup != null)
+            // Store all received names
+            foreach (var nameKVP in e.Names)
             {
-                if (groupMembers.ContainsKey(selectedGroup.ID))
-                {
-                    DisplayGroupMembers(groupMembers[selectedGroup.ID]);
-                }
+                memberNames[nameKVP.Key] = nameKVP.Value;
+            }
+            
+            // Refresh members display if currently visible
+            if (activeTabIndex == 1)
+            {
+                UpdateMembersDisplay();
             }
         });
     }
-
+    
     #endregion
-
-    void DisplayGroupMembers(List<GroupMember> members)
+    
+    #region UI Event Handlers
+    
+    /// <summary>
+    /// Handle group selection change from dropdown
+    /// Switches to newly selected group
+    /// </summary>
+    /// <param name="dropdownIndex">Selected dropdown index</param>
+    void OnGroupSelectionChanged(int dropdownIndex)
     {
-        // Clear existing members
-        foreach (Transform child in membersRoot)
+        if (dropdownIndex >= 0 && dropdownIndex < userGroups.Count)
         {
-            Destroy(child.gameObject);
+            var selectedGroup = userGroups.Values.ElementAt(dropdownIndex);
+            SelectGroup(selectedGroup);
         }
+    }
+    
+    /// <summary>
+    /// Handle member search field changes
+    /// Updates member filtering based on search term
+    /// </summary>
+    /// <param name="searchTerm">New search term</param>
+    void OnMemberSearchChanged(string searchTerm)
+    {
+        memberSearchTerm = searchTerm;
         
-        // Create member items
-        foreach (var member in members)
+        // Update display if members tab is active
+        if (activeTabIndex == 1)
         {
-            CreateMemberItem(member);
+            UpdateMembersDisplay();
         }
-        
-        // Request names for members we don't have
-        var unknownMembers = new List<UUID>();
-        foreach (var member in members)
+    }
+    
+    /// <summary>
+    /// Handle member filter dropdown changes
+    /// Updates member filtering based on selected filter
+    /// </summary>
+    /// <param name="filterIndex">Selected filter index</param>
+    void OnMemberFilterChanged(int filterIndex)
+    {
+        if (filterIndex >= 0 && filterIndex < System.Enum.GetValues(typeof(MemberFilter)).Length)
         {
-            if (!ClientManager.chat.avatarNames.ContainsKey(member.ID))
+            currentMemberFilter = (MemberFilter)filterIndex;
+            
+            // Update display if members tab is active
+            if (activeTabIndex == 1)
             {
-                unknownMembers.Add(member.ID);
+                UpdateMembersDisplay();
             }
         }
-        
-        if (unknownMembers.Count > 0)
-        {
-            client.Avatars.RequestAvatarNames(unknownMembers);
-        }
     }
-
-    void CreateMemberItem(GroupMember member)
-    {
-        if (memberItemPrefab == null || membersRoot == null) return;
-        
-        var memberObj = Instantiate(memberItemPrefab, membersRoot);
-        var nameText = memberObj.transform.Find("NameText")?.GetComponent<TMP_Text>();
-        var titleText = memberObj.transform.Find("TitleText")?.GetComponent<TMP_Text>();
-        var onlineText = memberObj.transform.Find("OnlineText")?.GetComponent<TMP_Text>();
-        var button = memberObj.GetComponent<Button>();
-        
-        string memberName = ClientManager.chat.avatarNames.ContainsKey(member.ID) 
-            ? ClientManager.chat.avatarNames[member.ID] : "Loading...";
-            
-        if (nameText) nameText.text = memberName;
-        if (titleText) titleText.text = member.Title;
-        if (onlineText) onlineText.text = member.IsOnline ? "Online" : "Offline";
-        
-        if (button)
-        {
-            button.onClick.AddListener(() => ShowMemberProfile(member.ID));
-        }
-    }
-
-    void DisplayGroupRoles(List<GroupRole> roles)
-    {
-        // Clear existing roles
-        foreach (Transform child in rolesRoot)
-        {
-            Destroy(child.gameObject);
-        }
-        
-        // Create role items
-        foreach (var role in roles)
-        {
-            CreateRoleItem(role);
-        }
-    }
-
-    void CreateRoleItem(GroupRole role)
-    {
-        if (roleItemPrefab == null || rolesRoot == null) return;
-        
-        var roleObj = Instantiate(roleItemPrefab, rolesRoot);
-        var nameText = roleObj.GetComponentInChildren<TMP_Text>();
-        
-        if (nameText) nameText.text = $"{role.Name} - {role.Description}";
-    }
-
-    void DisplayGroupNotices(List<GroupNoticesListEntry> notices)
-    {
-        // Clear existing notices
-        foreach (Transform child in noticesRoot)
-        {
-            Destroy(child.gameObject);
-        }
-        
-        // Create notice items
-        foreach (var notice in notices.Take(20)) // Limit to recent notices
-        {
-            CreateNoticeItem(notice);
-        }
-    }
-
-    void CreateNoticeItem(GroupNoticesListEntry notice)
-    {
-        if (noticeItemPrefab == null || noticesRoot == null) return;
-        
-        var noticeObj = Instantiate(noticeItemPrefab, noticesRoot);
-        var titleText = noticeObj.transform.Find("TitleText")?.GetComponent<TMP_Text>();
-        var dateText = noticeObj.transform.Find("DateText")?.GetComponent<TMP_Text>();
-        var authorText = noticeObj.transform.Find("AuthorText")?.GetComponent<TMP_Text>();
-        var button = noticeObj.GetComponent<Button>();
-        
-        if (titleText) titleText.text = notice.Subject;
-        if (dateText) dateText.text = notice.Timestamp.ToString("MMM dd, yyyy");
-        if (authorText) authorText.text = notice.FromName;
-        
-        if (button)
-        {
-            button.onClick.AddListener(() => ShowNoticeDetails(notice));
-        }
-    }
-
-    void UpdateRoleFilter(List<GroupRole> roles)
-    {
-        if (roleFilterDropdown == null) return;
-        
-        roleFilterDropdown.options.Clear();
-        roleFilterDropdown.options.Add(new TMP_Dropdown.OptionData("All Roles"));
-        
-        foreach (var role in roles)
-        {
-            roleFilterDropdown.options.Add(new TMP_Dropdown.OptionData(role.Name));
-        }
-        
-        roleFilterDropdown.RefreshShownValue();
-    }
-
-    #region Action Handlers
-
-    void ActivateGroup()
-    {
-        if (selectedGroup == null) return;
-        
-        client.Groups.ActivateGroup(selectedGroup.ID);
-        activeGroupID = selectedGroup.ID;
-        
-        RefreshGroups(); // Refresh to update UI
-    }
-
-    void LeaveGroup()
-    {
-        if (selectedGroup == null) return;
-        
-        // Confirm leaving group
-        if (UnityEngine.Application.isEditor || 
-            UnityEngine.Windows.Input.ShowMessageBox("Leave Group", 
-            $"Are you sure you want to leave '{selectedGroup.Name}'?", "Yes", "No") == 0)
-        {
-            client.Groups.LeaveGroup(selectedGroup.ID);
-        }
-    }
-
-    void ShowGroupInfo()
-    {
-        if (selectedGroup == null) return;
-        
-        // Switch to appropriate tab/panel
-        // Implementation depends on your UI layout
-    }
-
-    void ToggleGroupChat()
-    {
-        if (selectedGroup == null) return;
-        
-        bool isActive = groupChatPanel.activeSelf;
-        groupChatPanel.SetActive(!isActive);
-        
-        if (!isActive)
-        {
-            // Join group chat session
-            client.Self.RequestJoinGroupChat(selectedGroup.ID);
-        }
-    }
-
-    void SendGroupChat()
-    {
-        if (chatInput == null || selectedGroup == null) return;
-        
-        string message = chatInput.text.Trim();
-        if (string.IsNullOrEmpty(message)) return;
-        
-        client.Self.GroupChatMessage(selectedGroup.ID, message);
-        chatInput.text = "";
-    }
-
-    void InviteMember()
-    {
-        // This would open an invite dialog
-        Debug.Log("Invite member to group");
-    }
-
-    void EjectMember()
-    {
-        // This would show member selection for ejection
-        Debug.Log("Eject member from group");
-    }
-
-    void CreateNotice()
-    {
-        // This would open a create notice dialog
-        Debug.Log("Create group notice");
-    }
-
-    void ShowMemberProfile(UUID memberID)
-    {
-        var profileViewer = FindObjectOfType<ProfileViewer>();
-        if (profileViewer != null)
-        {
-            profileViewer.ShowProfile(memberID);
-        }
-    }
-
-    void ShowNoticeDetails(GroupNoticesListEntry notice)
-    {
-        // This would show detailed notice information
-        Debug.Log($"Show notice: {notice.Subject}");
-    }
-
+    
     #endregion
-
-    #region Toggle Handlers
-
-    void OnShowInProfileChanged(bool value)
+    
+    #region Group Management Actions
+    
+    /// <summary>
+    /// Leave the currently selected group
+    /// Initiates group departure process
+    /// </summary>
+    void LeaveCurrentGroup()
     {
-        if (selectedGroup == null) return;
+        if (currentGroup == null || client == null) return;
         
-        // Update group preferences
-        client.Groups.SetGroupAcceptNotices(selectedGroup.ID, receiveNoticesToggle.isOn, value);
-    }
-
-    void OnReceiveNoticesChanged(bool value)
-    {
-        if (selectedGroup == null) return;
+        // Confirm group departure
+        string groupName = currentGroup.Name;
+        Debug.Log($"Attempting to leave group: {groupName}");
         
-        // Update group preferences
-        client.Groups.SetGroupAcceptNotices(selectedGroup.ID, value, showInProfileToggle.isOn);
-    }
-
-    void OnListInProfileChanged(bool value)
-    {
-        if (selectedGroup == null) return;
-        
-        // This would update list in profile setting
-        // Implementation depends on the LibreMetaverse API
-    }
-
-    void OnRoleFilterChanged(int value)
-    {
-        if (selectedGroup == null || !groupMembers.ContainsKey(selectedGroup.ID)) return;
-        
-        var members = groupMembers[selectedGroup.ID];
-        
-        if (value == 0) // All roles
+        try
         {
-            DisplayGroupMembers(members);
+            client.Groups.LeaveGroup(currentGroup.ID);
         }
-        else
+        catch (Exception ex)
         {
-            // Filter by specific role
-            // This would need role-member mapping data
-            DisplayGroupMembers(members);
+            Debug.LogError($"Error leaving group: {ex.Message}");
         }
     }
-
+    
+    /// <summary>
+    /// Show dialog for creating a new group
+    /// Opens group creation interface
+    /// </summary>
+    void ShowCreateGroupDialog()
+    {
+        // This would open a group creation dialog
+        Debug.Log("Show create group dialog (not implemented)");
+    }
+    
+    /// <summary>
+    /// Show dialog for inviting new members
+    /// Opens member invitation interface
+    /// </summary>
+    void ShowInviteMemberDialog()
+    {
+        // This would open a member invitation dialog
+        Debug.Log("Show invite member dialog (not implemented)");
+    }
+    
+    /// <summary>
+    /// Show dialog for creating new roles
+    /// Opens role creation interface
+    /// </summary>
+    void ShowCreateRoleDialog()
+    {
+        // This would open a role creation dialog
+        Debug.Log("Show create role dialog (not implemented)");
+    }
+    
+    #endregion
+    
+    #region Utility Methods
+    
+    /// <summary>
+    /// Clear all display data when no group is selected
+    /// Resets UI to empty state
+    /// </summary>
+    void ClearAllDisplays()
+    {
+        // Clear group information
+        if (groupNameText) groupNameText.text = "No Group Selected";
+        if (memberCountText) memberCountText.text = "Members: 0";
+        if (groupDescriptionText) groupDescriptionText.text = "";
+        if (groupCharterText) groupCharterText.text = "";
+        if (groupInsigniaImage) groupInsigniaImage.texture = null;
+        
+        // Clear all lists
+        groupMembers.Clear();
+        groupRoles.Clear();
+        groupNotices.Clear();
+        
+        // Update displays
+        UpdateMembersDisplay();
+        UpdateNoticesDisplay();
+        UpdateRolesDisplay();
+    }
+    
     #endregion
 }

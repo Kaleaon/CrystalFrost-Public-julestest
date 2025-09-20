@@ -35,12 +35,11 @@ namespace CrystalFrost
 		private static ILogger<Services> _log;
 
 		/// <summary>
-		/// Gets an instance of <typeparamref name="T"/>
-		/// Will throw if its unable to provide a <typeparamref name="T"/>.
+		/// Gets a service of type <typeparamref name="T"/> from the service provider.
 		/// </summary>
-		/// <typeparam name="T"></typeparam>
-		/// <returns></returns>
-		/// <exception cref="ApplicationException"></exception>
+		/// <typeparam name="T">The type of service to get.</typeparam>
+		/// <returns>A service object of type <typeparamref name="T"/>.</returns>
+		/// <exception cref="ApplicationException">Thrown if the service cannot be provided.</exception>
 		public static T GetService<T>()
 		{
 			if (!_initialized) Initialize();
@@ -56,6 +55,12 @@ namespace CrystalFrost
         /// This is built up from defaults, config files, environment variables, and command line arguments.
         /// </summary>
         private static IConfigurationRoot _configRoot = default!;
+
+        /// <summary>
+        /// Gets a configuration section from the application's configuration root.
+        /// </summary>
+        /// <param name="sect">The name of the configuration section to get.</param>
+        /// <returns>The requested configuration section.</returns>
         public static IConfigurationSection GetConfigSection (string sect) => Services._configRoot.GetSection(sect);
 
 		private static void Initialize()

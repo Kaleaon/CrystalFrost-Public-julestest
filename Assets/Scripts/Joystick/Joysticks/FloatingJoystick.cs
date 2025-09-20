@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
+/// <summary>
+/// A joystick that can be moved around the screen, but stays in place when released.
+/// </summary>
 public class FloatingJoystick : Joystick
 {
     protected override void Start()
@@ -11,6 +14,7 @@ public class FloatingJoystick : Joystick
         background.gameObject.SetActive(false);
     }
 
+    /// <inheritdoc/>
     public override void OnPointerDown(PointerEventData eventData)
     {
         background.anchoredPosition = ScreenPointToAnchoredPosition(eventData.position);
@@ -18,6 +22,7 @@ public class FloatingJoystick : Joystick
         base.OnPointerDown(eventData);
     }
 
+    /// <inheritdoc/>
     public override void OnPointerUp(PointerEventData eventData)
     {
         background.gameObject.SetActive(false);

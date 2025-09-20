@@ -8,12 +8,22 @@ namespace CrystalFrost.Config
 	/// </summary>
 	public class AnimationConfig
 	{
+		/// <summary>
+		/// The name of the configuration subsection.
+		/// </summary>
 		public const string subsectionName = "Animations";
 		//Todo: is better to cache path is grid specific to prevent conflict of same assetID
 		private readonly string cachePath = Path.Combine(Application.persistentDataPath, "assetAnimation");
 
+		/// <summary>
+		/// Whether caching is allowed.
+		/// </summary>
 		public bool isCachingAllowed { get; set; } = true;
 
+		/// <summary>
+		/// Gets the path to the cache.
+		/// </summary>
+		/// <returns>The path to the cache.</returns>
 		public string GetCachePath()
 		{
 			return cachePath;

@@ -15,12 +15,21 @@ namespace CrystalFrost.WorldState
 	
 	}
 
+	/// <summary>
+	/// Handles terse object updates.
+	/// </summary>
 	public class HandleTerseUpdate : IHandleTerseUpdate, IDisposable
 	{
 		private readonly ILogger<HandleTerseUpdate> _log;
 		private readonly GridClient _client;
 		private readonly IWorld _world;
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="HandleTerseUpdate"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
+		/// <param name="client">The GridClient.</param>
+		/// <param name="world">The world.</param>
 		public HandleTerseUpdate(
 			ILogger<HandleTerseUpdate> log,
 			GridClient client,
@@ -85,6 +94,7 @@ namespace CrystalFrost.WorldState
 			return existing;
 		}
 
+		/// <inheritdoc/>
 		public void Dispose()
 		{
 			_client.Objects.TerseObjectUpdate -= TerseObjectUpdate;

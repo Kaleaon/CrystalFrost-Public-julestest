@@ -11,8 +11,14 @@ using System.Diagnostics;
 
 namespace CrystalFrost.Assets.Textures
 {
+	/// <summary>
+	/// Defines the interface for a worker that downloads textures.
+	/// </summary>
 	public interface ITextureDownloadWorker : IDisposable { }
 
+	/// <summary>
+	/// A background worker that downloads textures.
+	/// </summary>
 	public class TextureDownloadWorker : BackgroundWorker, ITextureDownloadWorker
 	{
 		private readonly TextureConfig _textureConfig;
@@ -21,6 +27,15 @@ namespace CrystalFrost.Assets.Textures
 		private readonly ITextureDownloadRequestQueue _requests;
 		private readonly List<UUID> _pendingDownloads = new();
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="TextureDownloadWorker"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
+		/// <param name="runningIndicator">A signal that indicates that the application is shutting down.</param>
+		/// <param name="client">The GridClient to use for downloading.</param>
+		/// <param name="downloadedTextureQueue">A queue of downloaded textures.</param>
+		/// <param name="downloadRequestQueue">A queue of textures to be downloaded.</param>
+		/// <param name="textureConfig">The configuration for textures.</param>
 		public TextureDownloadWorker(
 			ILogger<TextureDownloadWorker> log,
 			IProvideShutdownSignal runningIndicator,

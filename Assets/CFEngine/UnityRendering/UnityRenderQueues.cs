@@ -8,7 +8,7 @@ namespace CrystalFrost.UnityRendering
 	/// and has decided that are ready for the render thread to initialize.
 	/// </summary>
 	public interface INewSimObjectQueue : IConcurrentQueue<SimObject> { }
-
+	/// <inheritdoc/>
 	public class NewSimObjectQueue : AbstractedConcurrentQueue<SimObject>, INewSimObjectQueue { }
 
 	/// <summary>
@@ -21,6 +21,6 @@ namespace CrystalFrost.UnityRendering
 	/// the vertex data can be generated from from the PrimData.
 	/// </remarks>
 	public interface ISceneObjectsNeedingRenderersQueue : IConcurrentQueue<SceneObject> { }
-
+	/// <inheritdoc/>
 	public class SceneObjectsNeedingRenderersQueue : AbstractedConcurrentQueue<SceneObject>, ISceneObjectsNeedingRenderersQueue { }
 }

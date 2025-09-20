@@ -6,10 +6,14 @@ using CSJ2K.Util;
 
 namespace CrystalFrost.Assets.Textures.CSJ2K
 {
+    /// <summary>
+    /// Creates bitmap images.
+    /// </summary>
     public class BitmapImageCreator : IImageCreator
     {
         private static readonly IImageCreator Instance = new BitmapImageCreator();
 
+        /// <inheritdoc/>
         public bool IsDefault
         {
             get
@@ -18,11 +22,15 @@ namespace CrystalFrost.Assets.Textures.CSJ2K
             }
         }
 
+        /// <summary>
+        /// Registers this image creator with the image factory.
+        /// </summary>
         public static void Register()
         {
             ImageFactory.Register(Instance);
         }
 
+        /// <inheritdoc/>
         public IImage Create(int width, int height, byte[] bytes)
         {
 #if !UNITY_ANDROID && !UNITY_IOS && !UNITY_EDITOR_OSX
@@ -32,6 +40,7 @@ namespace CrystalFrost.Assets.Textures.CSJ2K
 #endif
         }
 
+        /// <inheritdoc/>
         public BlkImgDataSrc ToPortableImageSource(object imageObject)
         {
 #if !UNITY_ANDROID && !UNITY_IOS && !UNITY_EDITOR_OSX

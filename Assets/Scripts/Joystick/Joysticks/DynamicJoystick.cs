@@ -3,8 +3,14 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
+/// <summary>
+/// A joystick that can be moved around the screen.
+/// </summary>
 public class DynamicJoystick : Joystick
 {
+    /// <summary>
+    /// The threshold for moving the joystick.
+    /// </summary>
     public float MoveThreshold { get { return moveThreshold; } set { moveThreshold = Mathf.Abs(value); } }
 
     [SerializeField] private float moveThreshold = 1;
@@ -16,6 +22,7 @@ public class DynamicJoystick : Joystick
         background.gameObject.SetActive(false);
     }
 
+    /// <inheritdoc/>
     public override void OnPointerDown(PointerEventData eventData)
     {
         background.anchoredPosition = ScreenPointToAnchoredPosition(eventData.position);
@@ -23,6 +30,7 @@ public class DynamicJoystick : Joystick
         base.OnPointerDown(eventData);
     }
 
+    /// <inheritdoc/>
     public override void OnPointerUp(PointerEventData eventData)
     {
         background.gameObject.SetActive(false);

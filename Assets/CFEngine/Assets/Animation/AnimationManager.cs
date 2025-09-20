@@ -5,11 +5,22 @@ using System;
 namespace CrystalFrost.Assets.Animation
 {
 
+	/// <summary>
+	/// Defines the interface for an animation manager.
+	/// </summary>
 	public interface IAnimationManager : IDisposable
 	{
+		/// <summary>
+		/// Requests an animation.
+		/// </summary>
+		/// <param name="primitive">The primitive to which the animation will be applied.</param>
+		/// <param name="animationId">The UUID of the animation to request.</param>
 		public void RequestAnimation(Primitive primitive, UUID animationId);
 	}
 
+	/// <summary>
+	/// Manages animations.
+	/// </summary>
 	public class AnimationManager : IAnimationManager
 	{
 		private readonly ILogger<AnimationManager> _log;
@@ -18,6 +29,14 @@ namespace CrystalFrost.Assets.Animation
 		private readonly IAnimationDecodeWorker _decodeWorker;
 		private readonly IAnimationCacheWorker _animationCache;
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="AnimationManager"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
+		/// <param name="requestQueue">A queue of animation requests.</param>
+		/// <param name="downloadWorker">The worker that downloads animations.</param>
+		/// <param name="decodeWorker">The worker that decodes animations.</param>
+		/// <param name="animationCache">The animation cache.</param>
 		public AnimationManager(ILogger<AnimationManager> log,
 			IAnimationRequestQueue requestQueue,
 			IAnimationDownloadWorker downloadWorker,
@@ -31,6 +50,7 @@ namespace CrystalFrost.Assets.Animation
 			this._animationCache = animationCache;
 		}
 
+		/// <inheritdoc/>
 		public void RequestAnimation(Primitive primitive, UUID animationId)
 		{
 			//_log.LogInformation($"Request AnimationId: {animationId}");
@@ -43,6 +63,7 @@ namespace CrystalFrost.Assets.Animation
 
 		}
 
+		/// <inheritdoc/>
 		void IDisposable.Dispose()
 		{
 			_animationCache.Dispose();

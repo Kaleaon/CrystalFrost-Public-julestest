@@ -7,17 +7,29 @@ using UnityEngine;
 
 namespace CrystalFrost.Assets.CFEngine.WorldState
 {
+	/// <summary>
+	/// Defines the interface for a handler for object block data updates.
+	/// </summary>
 	public interface IHandleObjectBlockDataUpdate
 	{
 
 	}
 
+	/// <summary>
+	/// Handles object block data updates.
+	/// </summary>
 	public class HandleObjectBlockDataUpdate : IHandleObjectBlockDataUpdate, IDisposable
 	{
 		private readonly ILogger<HandleObjectBlockDataUpdate> _log;
 		private readonly GridClient _client;
 		private readonly IWorld _world;
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="HandleObjectBlockDataUpdate"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
+		/// <param name="client">The GridClient.</param>
+		/// <param name="world">The world.</param>
 		public HandleObjectBlockDataUpdate(
 			ILogger<HandleObjectBlockDataUpdate> log,
 			GridClient client,
@@ -31,6 +43,7 @@ namespace CrystalFrost.Assets.CFEngine.WorldState
 			_client.Objects.ObjectDataBlockUpdate += ObjectDataBlockUpdate;
 		}
 
+		/// <inheritdoc/>
 		public void Dispose()
 		{
 			_client.Objects.ObjectDataBlockUpdate -= ObjectDataBlockUpdate;

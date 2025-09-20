@@ -3,8 +3,14 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
+/// <summary>
+/// A joystick that can be of type Fixed, Floating, or Dynamic.
+/// </summary>
 public class VariableJoystick : Joystick
 {
+    /// <summary>
+    /// The threshold for moving the joystick.
+    /// </summary>
     public float MoveThreshold { get { return moveThreshold; } set { moveThreshold = Mathf.Abs(value); } }
 
     [SerializeField] private float moveThreshold = 1;
@@ -12,6 +18,10 @@ public class VariableJoystick : Joystick
 
     private Vector2 fixedPosition = Vector2.zero;
 
+    /// <summary>
+    /// Sets the mode of the joystick.
+    /// </summary>
+    /// <param name="joystickType">The type of joystick to set.</param>
     public void SetMode(JoystickType joystickType)
     {
         this.joystickType = joystickType;
@@ -31,6 +41,7 @@ public class VariableJoystick : Joystick
         SetMode(joystickType);
     }
 
+    /// <inheritdoc/>
     public override void OnPointerDown(PointerEventData eventData)
     {
         if(joystickType != JoystickType.Fixed)
@@ -41,6 +52,7 @@ public class VariableJoystick : Joystick
         base.OnPointerDown(eventData);
     }
 
+    /// <inheritdoc/>
     public override void OnPointerUp(PointerEventData eventData)
     {
         if(joystickType != JoystickType.Fixed)

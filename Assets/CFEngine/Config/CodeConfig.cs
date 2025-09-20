@@ -7,6 +7,9 @@
 	/// </summary>
     public class CodeConfig
     {
+        /// <summary>
+        /// The name of the configuration subsection.
+        /// </summary>
         public const string subsectionName = "Code";
 
 		/// <summary>

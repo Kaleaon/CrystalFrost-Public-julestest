@@ -14,6 +14,11 @@ namespace CrystalFrost.Logging
         /// </summary>
         private readonly LogLevel _logLevel;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="UnityDebugLogger"/> class.
+        /// </summary>
+        /// <param name="categoryName">The name of the category.</param>
+        /// <param name="configuration">The configuration.</param>
         public UnityDebugLogger(string categoryName, IConfiguration configuration)
         {
             // Look in the configuration for a log level section,
@@ -36,17 +41,20 @@ namespace CrystalFrost.Logging
             //System.Diagnostics.Debug.WriteLine(categoryName + " LogLevel: " + _logLevel);
         }
 
+        /// <inheritdoc/>
         public IDisposable BeginScope<TState>(TState state) where TState : notnull
         {
             // no need for logging scopes just yet.
             return default;
         }
 
+        /// <inheritdoc/>
         public bool IsEnabled(LogLevel logLevel)
         {
             return logLevel >= _logLevel;
         }
 
+        /// <inheritdoc/>
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
         {
             if (!IsEnabled(logLevel)) return; // don't bother if the level is too low.

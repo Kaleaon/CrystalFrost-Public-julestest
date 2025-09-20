@@ -12,8 +12,14 @@ using OpenMetaverse.Assets;
 
 namespace CrystalFrost.Assets
 {
+	/// <summary>
+	/// Defines the interface for a worker that decodes textures.
+	/// </summary>
 	public interface ITextureDecodeWorker : IDisposable { }
 
+	/// <summary>
+	/// A background worker that decodes textures.
+	/// </summary>
 	public class TextureDecodeWorker : BackgroundWorker, ITextureDecodeWorker
 	{
 		private readonly ITextureDecoder _decoder;
@@ -21,6 +27,15 @@ namespace CrystalFrost.Assets
 		private readonly IDecodedTextureCacheQueue _readyTextureQueue;
 		private readonly TextureConfig _textureConfig;
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="TextureDecodeWorker"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
+		/// <param name="runningIndicator">A signal that indicates that the application is shutting down.</param>
+		/// <param name="decoder">The texture decoder to use.</param>
+		/// <param name="readyTextureQueue">A queue of decoded textures.</param>
+		/// <param name="downloadedTextureQueue">A queue of downloaded textures to be decoded.</param>
+		/// <param name="textureConfig">The configuration for textures.</param>
 		public TextureDecodeWorker(
 			ILogger<TextureDecodeWorker> log,
 			IProvideShutdownSignal runningIndicator,

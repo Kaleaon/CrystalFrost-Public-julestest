@@ -43,19 +43,28 @@ namespace CrystalFrost.Lib
 
         // based on code from aaro4130 on the Unity forums
 
+        /// <inheritdoc/>
         public int Width { get; private set; } = 0;
 
+        /// <inheritdoc/>
         public int Height { get; private set; } = 0;
         
+        /// <inheritdoc/>
         public int BitsPerPixel { get; private set; } = 0;
 
+        /// <inheritdoc/>
         public byte[] Bitmap { get; private set; } = null;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TgaReader"/> class.
+        /// </summary>
+        /// <param name="log">A logger for logging messages.</param>
         public TgaReader(ILogger<TgaReader> log)
         {
             _log = log;
         }
 
+        /// <inheritdoc/>
         public void Read(byte[] tgaData)
         {
             using var m = new MemoryStream(tgaData);

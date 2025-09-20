@@ -2,13 +2,24 @@
 
 namespace CrystalFrost.Client.Credentials
 {
+    /// <summary>
+    /// Defines the interface for a factory that creates credentials stores.
+    /// </summary>
     public interface ICredentialsStoreFactory
     {
+        /// <summary>
+        /// Gets a credentials store that is appropriate for the current operating system.
+        /// </summary>
+        /// <returns>A credentials store.</returns>
         ICredentialsStore GetCredentialsStore();
     }
 
+    /// <summary>
+    /// A factory that creates credentials stores.
+    /// </summary>
     public class CredentialsStoreFactory : ICredentialsStoreFactory
     {
+        /// <inheritdoc/>
         public ICredentialsStore GetCredentialsStore()
         {
             // Get a creditals store that is appropriate for the operating system.

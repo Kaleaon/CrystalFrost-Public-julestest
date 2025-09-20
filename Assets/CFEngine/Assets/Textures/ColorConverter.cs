@@ -2,6 +2,9 @@
 
 namespace CrystalFrost.Assets.Textures
 {
+    /// <summary>
+    /// Provides methods for converting colors between different formats.
+    /// </summary>
     public static class ColorConverter
     {
         [StructLayout(LayoutKind.Sequential, Size = 4)]

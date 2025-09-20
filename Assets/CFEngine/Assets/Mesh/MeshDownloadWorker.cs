@@ -15,8 +15,14 @@ using UnityEngine;
 
 namespace CrystalFrost.Assets.Mesh
 {
+	/// <summary>
+	/// Defines the interface for a worker that downloads meshes.
+	/// </summary>
 	public interface IMeshDownloadWorker : IDisposable { }
 
+	/// <summary>
+	/// A background worker that downloads meshes.
+	/// </summary>
 	public class MeshDownloadWorker : BackgroundWorker, IMeshDownloadWorker
 	{
 		private readonly MeshConfig _meshConfig;
@@ -25,6 +31,15 @@ namespace CrystalFrost.Assets.Mesh
 		private readonly IMeshDownloadRequestQueue _requests;
 		private readonly List<UUID> _pendingDownloads = new();
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="MeshDownloadWorker"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
+		/// <param name="runningIndicator">A signal that indicates that the application is shutting down.</param>
+		/// <param name="client">The GridClient to use for downloading.</param>
+		/// <param name="downloadedMeshQueue">A queue of downloaded meshes.</param>
+		/// <param name="downloadRequestQueue">A queue of meshes to be downloaded.</param>
+		/// <param name="meshConfig">The configuration for meshes.</param>
 		public MeshDownloadWorker(
 			ILogger<MeshDownloadWorker> log,
 			IProvideShutdownSignal runningIndicator,

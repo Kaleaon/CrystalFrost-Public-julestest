@@ -72,8 +72,10 @@ namespace CrystalFrost.Timing
         }
 
         /// <summary>
-        /// Measures code that returns no value.
+        /// Measures the execution time of an action.
         /// </summary>
+        /// <param name="category">The category of the measurement.</param>
+        /// <param name="action">The action to measure.</param>
         public static void Measure(string category, Action action)
         {
             if (Disabled)
@@ -88,9 +90,12 @@ namespace CrystalFrost.Timing
         }
 
         /// <summary>
-        /// Measure code that returns a <typeparamref name="T"/>.
+        /// Measures the execution time of a function.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
+        /// <typeparam name="T">The return type of the function.</typeparam>
+        /// <param name="category">The category of the measurement.</param>
+        /// <param name="func">The function to measure.</param>
+        /// <returns>The result of the function.</returns>
         public static T Measure<T>(string category, Func<T> func)
         {
             if (Disabled) return func();
@@ -102,8 +107,10 @@ namespace CrystalFrost.Timing
         }
 
         /// <summary>
-        /// Measures a Task
+        /// Measures the execution time of an async action.
         /// </summary>
+        /// <param name="category">The category of the measurement.</param>
+        /// <param name="action">The async action to measure.</param>
         public static async Task Measure(string category, Func<Task> action)
         {
             if (Disabled)
@@ -118,9 +125,12 @@ namespace CrystalFrost.Timing
         }
 
         /// <summary>
-        /// Measures a Task<typeparamref name="T"/>
+        /// Measures the execution time of an async function.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
+        /// <typeparam name="T">The return type of the function.</typeparam>
+        /// <param name="category">The category of the measurement.</param>
+        /// <param name="action">The async function to measure.</param>
+        /// <returns>The result of the function.</returns>
         public static async Task<T> Measure<T>(string category, Func<Task<T>> action)
         {
             if (Disabled) return await action();

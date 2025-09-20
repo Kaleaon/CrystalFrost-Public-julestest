@@ -2,14 +2,25 @@
 
 namespace CrystalFrost.Config
 {
+	/// <summary>
+	/// Defines the interface for a login URI provider.
+	/// </summary>
 	public interface ILoginUriProvider
 	{
+		/// <summary>
+		/// Gets the login URI.
+		/// </summary>
+		/// <returns>The login URI.</returns>
 		string GetLoginUri();
 	}
 
+	/// <summary>
+	/// Provides the login URI.
+	/// </summary>
 	public class LoginUriProvider : ILoginUriProvider
 	{
 
+		/// <inheritdoc/>
 		public string GetLoginUri()
 		{
             // TODO: add the grid stuff

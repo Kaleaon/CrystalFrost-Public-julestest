@@ -5,6 +5,9 @@ using UnityEngine;
 
 namespace CrystalFrost.Assets.Animation
 {
+	/// <summary>
+	/// Provides extension methods for animations.
+	/// </summary>
 	public static class AnimationExtensions
 	{
 		private static string GetRelativePath(Transform root, Dictionary<string, Transform> bones, string targetJoint)
@@ -20,6 +23,13 @@ namespace CrystalFrost.Assets.Animation
 			return path;
 		}
 
+		/// <summary>
+		/// Converts a <see cref="DecodedAnimation"/> to a Unity <see cref="AnimationClip"/>.
+		/// </summary>
+		/// <param name="animation">The decoded animation to convert.</param>
+		/// <param name="root">The root transform of the skeleton.</param>
+		/// <param name="bones">A dictionary of bones in the skeleton, keyed by name.</param>
+		/// <returns>The converted <see cref="AnimationClip"/>.</returns>
 		public static AnimationClip ToUnityAnimationClip(this DecodedAnimation animation, Transform root, Dictionary<string, Transform> bones)
 		{
 			var clip = new AnimationClip();

@@ -17,8 +17,14 @@ using CommandLine;
 
 namespace CrystalFrost
 {
+	/// <summary>
+	/// Defines the interface for a worker that caches textures.
+	/// </summary>
 	public interface ITextureCacheWorker : IDisposable { }
 
+	/// <summary>
+	/// A background worker that caches textures.
+	/// </summary>
 	public class TextureCacheWorker : BackgroundWorker, ITextureCacheWorker
 	{
 		private readonly TextureConfig _textureConfig;
@@ -31,7 +37,17 @@ namespace CrystalFrost
 		private bool _isCachingAllowed;
 		private string _cachePath;
 
-
+		/// <summary>
+		/// Initializes a new instance of the <see cref="TextureCacheWorker"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
+		/// <param name="runningIndicator">A signal that indicates that the application is shutting down.</param>
+		/// <param name="aesMeshEncryptor">An encryptor for encrypting and decrypting textures.</param>
+		/// <param name="readyTextureQueue">A queue of ready textures.</param>
+		/// <param name="downloadRequestQueue">A queue of textures to be downloaded.</param>
+		/// <param name="meshRequestQueue">A queue of texture requests.</param>
+		/// <param name="decodedCache">A queue of decoded textures to be cached.</param>
+		/// <param name="textureConfig">The configuration for textures.</param>
 		public TextureCacheWorker(
 			ILogger<IMeshCacheWorker> log,
 			IProvideShutdownSignal runningIndicator,

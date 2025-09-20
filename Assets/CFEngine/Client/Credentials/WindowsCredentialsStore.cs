@@ -17,11 +17,16 @@ namespace CrystalFrost.Client.Credentials
     {
         private readonly ILogger<WindowsCredentialsStore> _log;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="WindowsCredentialsStore"/> class.
+        /// </summary>
+        /// <param name="log">A logger for logging messages.</param>
         public WindowsCredentialsStore(ILogger<WindowsCredentialsStore> log)
         {
             _log = log;
         }
 
+        /// <inheritdoc/>
         public void Load()
         {
             _log.LoadingCredentials();
@@ -54,6 +59,7 @@ namespace CrystalFrost.Client.Credentials
             }
         }
 
+        /// <inheritdoc/>
         public void Save()
         {
             _log.SavingCredentials();

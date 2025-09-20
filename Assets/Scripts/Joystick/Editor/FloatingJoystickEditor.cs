@@ -7,9 +7,13 @@ using UnityEditor;
 #endif
 
 #if UNITY_EDITOR
+/// <summary>
+/// The editor for the FloatingJoystick.
+/// </summary>
 [CustomEditor(typeof(FloatingJoystick))]
 public class FloatingJoystickEditor : JoystickEditor
 {
+    /// <inheritdoc/>
     public override void OnInspectorGUI()
     {
         base.OnInspectorGUI();

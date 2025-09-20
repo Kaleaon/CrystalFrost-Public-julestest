@@ -7,11 +7,19 @@ using System.Threading.Tasks;
 
 namespace CrystalFrost.Assets.Textures.OpenJ2K
 {
+    /// <summary>
+    /// A texture decoder that uses the OpenJ2K library.
+    /// </summary>
     public class OpenJ2KTextureDecoder : ITextureDecoder
     {
         private readonly ILogger<OpenJ2KTextureDecoder> _log;
         private readonly ITgaReader _tgaReader;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="OpenJ2KTextureDecoder"/> class.
+        /// </summary>
+        /// <param name="log">A logger for logging messages.</param>
+        /// <param name="tgaReader">A TGA reader.</param>
         public OpenJ2KTextureDecoder(
             ILogger<OpenJ2KTextureDecoder> log,
             ITgaReader tgaReader)
@@ -20,6 +28,7 @@ namespace CrystalFrost.Assets.Textures.OpenJ2K
             _tgaReader = tgaReader;
         }
 
+        /// <inheritdoc/>
         public Task<DecodedTexture> Decode(AssetTexture texture)
         {
             return Perf.Measure("OpenJ2KTextureDecoder.Decode",

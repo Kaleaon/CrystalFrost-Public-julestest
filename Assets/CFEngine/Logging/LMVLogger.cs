@@ -3,12 +3,22 @@ using System;
 
 namespace CrystalFrost.Logging
 {
+	/// <summary>
+	/// Defines the interface for a logger that captures log messages from the LibMetaverse library.
+	/// </summary>
 	public interface ILMVLogger : IDisposable { }
 
+	/// <summary>
+	/// A logger that captures log messages from the LibMetaverse library.
+	/// </summary>
 	public class LMVLogger : ILMVLogger
 	{
 		private readonly ILogger<LMVLogger> _log;
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="LMVLogger"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
 		public LMVLogger(ILogger<LMVLogger> log)
 		{
 			_log = log;
@@ -36,6 +46,7 @@ namespace CrystalFrost.Logging
 			}
 		}
 
+		/// <inheritdoc/>
 		public void Dispose()
 		{
 			OpenMetaverse.Logger.OnLogMessage -= OpenMetaverseLogger_OnLogMessage;

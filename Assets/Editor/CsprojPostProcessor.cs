@@ -1,10 +1,19 @@
 using UnityEngine;
 using UnityEditor;
 
+/// <summary>
+/// Post-processes the generated C# project files.
+/// </summary>
 public class CSProjPostProcessor : AssetPostprocessor {
 
     private const string EngineCsproj = "CrystalFrostEngine.csproj";
 
+    /// <summary>
+    /// Called when a C# project file is generated.
+    /// </summary>
+    /// <param name="path">The path to the generated project file.</param>
+    /// <param name="content">The content of the generated project file.</param>
+    /// <returns>The modified content of the project file.</returns>
     public static string OnGeneratedCSProject(string path, string content)
     {
         if (path.EndsWith(EngineCsproj))

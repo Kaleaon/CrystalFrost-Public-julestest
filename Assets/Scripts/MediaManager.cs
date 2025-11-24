@@ -513,11 +513,40 @@ public class MediaManager : MonoBehaviour
     {
         if (mediaUrlField == null || string.IsNullOrEmpty(mediaUrlField.text)) return;
         
-        // This would set media on the selected object
-        Debug.Log($"Setting media URL: {mediaUrlField.text}");
+        var buildTools = FindObjectOfType<BuildTools>();
+        if (buildTools == null || buildTools.SelectedPrim == null)
+        {
+             Debug.LogWarning("No primitive selected to set media on.");
+             return;
+        }
         
-        // Implementation would depend on object selection system
-        // and LibreMetaverse media setting methods
+        var prim = buildTools.SelectedPrim;
+        Debug.Log($"Setting media URL: {mediaUrlField.text} on prim {prim.LocalID}");
+        
+        MediaEntry me = new MediaEntry();
+        me.CurrentURL = mediaUrlField.text;
+        me.HomePage = mediaUrlField.text;
+        me.AutoLoop = loopMediaToggle != null && loopMediaToggle.isOn;
+        me.AutoPlay = autoPlayToggle != null && autoPlayToggle.isOn;
+        me.Height = 512; // Default
+        me.Width = 512; // Default
+        me.AutoScale = false;
+
+        // Attempt to determine face count. If indeterminate, assume 1 (or 6 for box? but default texture face array might differ)
+        int faceCount = 0;
+        if (prim.Textures != null && prim.Textures.FaceTextures != null)
+            faceCount = prim.Textures.FaceTextures.Length;
+        else
+            faceCount = 6; // Fallback
+
+        MediaEntry[] entries = new MediaEntry[faceCount];
+        // Set on face 0 by default
+        entries[0] = me;
+        
+        if (client != null)
+        {
+             client.Objects.UpdateObjectMedia(client.Network.CurrentSim, prim.LocalID, entries);
+        }
     }
 
     void PlayParcelMedia()

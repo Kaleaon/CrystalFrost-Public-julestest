@@ -65,6 +65,10 @@ public abstract class SimTerrain : ISimTerrain
     // Handle an edit terrain height message from the simulator.
 	public void EditTerrainHeight(uint handle, int absX, int absY, float[,] heightData)
 	{
+        // DEPRECATED: This code is part of the legacy terrain system and has been superseded by
+        // SimTerrainHeightMap and its TerrainPatchUpdate/TerrainUpdate mechanisms.
+        // It is left here for reference but is not currently used by the simulator manager.
+        
         // TODO: OLD code that needs to be updated.
         /*
 		if (!terrainDictionary.ContainsKey(handle))

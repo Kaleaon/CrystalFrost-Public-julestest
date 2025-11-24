@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Unity.Jobs;
@@ -9,6 +10,7 @@ using Unity.Mathematics;
 using Unity.Collections;
 using UnityEngine;
 using OpenMetaverse;
+using OpenMetaverse.Rendering;
 using static OpenMetaverse.Primitive;
 
 #if useHDRP
@@ -952,6 +954,23 @@ public class SimManager : MonoBehaviour
 				}
 			}
 		}
+        else if (_config.UseNewObjectGraph && _renderManager != null && _renderManager.SceneObjects.Get(prim.LocalID) != null)
+        {
+            var sceneObj = _renderManager.SceneObjects.Get(prim.LocalID);
+            if (IsHUD(sceneObj.SimObject.Prim))
+            {
+                rendr.gameObject.layer = 8;
+            }
+            
+            if (sceneObj.SimObject.ParentID != 0)
+            {
+                var parent = _renderManager.SceneObjects.Get(sceneObj.SimObject.ParentID);
+                if (parent != null && IsHUD(parent.SimObject.Prim))
+                {
+                    rendr.gameObject.layer = 8;
+                }
+            }
+        }
 	}
 
 	private void ScanForFaces()
@@ -1002,7 +1021,8 @@ public class SimManager : MonoBehaviour
 		ServiceQueueRepeatedly(_needRenderDataQueue, SetupRenderDataForObject);
 	}
 
-	private void DoSceneObjectNeedingRenderer(SceneObject obj)
+	// Replaced by SetupRenderDataForObject
+	/*private void DoSceneObjectNeedingRenderer(SceneObject obj)
 	{
 		_log.Render_SceneObjectNeedsRenderers(obj.LocalID);
 
@@ -1025,7 +1045,7 @@ public class SimManager : MonoBehaviour
 		// TODO Setup Lights
 
 		// TODO Setup Particles.
-	}
+	}*/
 
 	/// <summary>
 	/// Sets up Render Data for objects that need it.
@@ -1076,12 +1096,12 @@ public class SimManager : MonoBehaviour
 	private void SetupParticles(SceneObject sceneObject)
 	{
 		var prim = sceneObject.SimObject.Prim;
-		if (prim.ParticleSystem.Pattern == Primitive.ParticleSystem.SourcePattern.None && sceneObject.GameObject.GetComponent<UnityEngine.ParticleSystem>() == null) return;
+		if (prim.ParticleSys.Pattern == Primitive.ParticleSystem.SourcePattern.None && sceneObject.GameObject.GetComponent<UnityEngine.ParticleSystem>() == null) return;
 
 		var obj = sceneObject.GameObject;
 		bool hasParticles = obj.GetComponent<UnityEngine.ParticleSystem>() != null;
 		
-		if (prim.ParticleSystem.Pattern != Primitive.ParticleSystem.SourcePattern.None)
+		if (prim.ParticleSys.Pattern != Primitive.ParticleSystem.SourcePattern.None)
 		{
 			UnityEngine.ParticleSystem ps = obj.GetComponent<UnityEngine.ParticleSystem>();
 			if(ps == null) ps = obj.AddComponent<UnityEngine.ParticleSystem>();
@@ -1090,36 +1110,36 @@ public class SimManager : MonoBehaviour
 			var main = ps.main;
 
 			AnimationCurve burstSpeedCurve = new();
-			burstSpeedCurve.AddKey(prim.ParticleSystem.BurstSpeedMin, 0f);
+			burstSpeedCurve.AddKey(prim.ParticleSys.BurstSpeedMin, 0f);
 			burstSpeedCurve.AddKey(prim.ParticleSys.BurstSpeedMax, 1f);
 			main.startSpeed = new UnityEngine.ParticleSystem.MinMaxCurve(1f, burstSpeedCurve);
 
-			main.startLifetime = prim.ParticleSystem.PartMaxAge;
+			main.startLifetime = prim.ParticleSys.PartMaxAge;
 			
 			if (!hasParticles)
 			{
-				if (prim.ParticleSystem.MaxAge != 0f)
+				if (prim.ParticleSys.MaxAge != 0f)
 				{
 					main.loop = false;
-					main.duration = prim.ParticleSystem.MaxAge;
+					main.duration = prim.ParticleSys.MaxAge;
 				}
 			}
 
 			var em = ps.emission;
 			em.enabled = true;
-			em.rateOverTime = prim.ParticleSystem.BurstPartCount / prim.ParticleSystem.BurstRate;
+			em.rateOverTime = prim.ParticleSys.BurstPartCount / prim.ParticleSys.BurstRate;
 
 			var fo = ps.forceOverLifetime;
 
 			fo.enabled = true;
-			Vector3 vec = prim.ParticleSystem.PartAcceleration.ToVector3();
+			Vector3 vec = prim.ParticleSys.PartAcceleration.ToVector3();
 			
 			var scale = obj.transform.lossyScale;
 			if (Mathf.Abs(scale.x) > 0.001f) fo.x = vec.x / scale.x;
 			if (Mathf.Abs(scale.y) > 0.001f) fo.y = vec.y / scale.y;
 			if (Mathf.Abs(scale.z) > 0.001f) fo.z = vec.z / scale.z;
 
-			vec = prim.ParticleSystem.AngularVelocity.ToVector3() * Mathf.Rad2Deg;
+			vec = prim.ParticleSys.AngularVelocity.ToVector3() * Mathf.Rad2Deg;
 
 			var vel = ps.velocityOverLifetime;
 			vel.enabled = true;
@@ -1131,18 +1151,18 @@ public class SimManager : MonoBehaviour
 			var sh = ps.shape;
 			sh.enabled = true;
 			float mag = scale.magnitude;
-			sh.radius = mag > 0 ? (prim.ParticleSystem.BurstRadius / mag) * 2f : 0;
+			sh.radius = mag > 0 ? (prim.ParticleSys.BurstRadius / mag) * 2f : 0;
 			sh.rotation = new Vector3(-90f, 0f, 0f);
 
 			ParticleSystemRenderer r = ps.GetComponent<ParticleSystemRenderer>();
 			r.material = Instantiate(ResourceCache.particleMaterial);
-			r.material.SetTexture("_BaseMap", ClientManager.assetManager.RequestTexture(prim.ParticleSystem.Texture));
+			r.material.SetTexture("_BaseMap", ClientManager.assetManager.RequestTexture(prim.ParticleSys.Texture));
 
-			switch (prim.ParticleSystem.Pattern)
+			switch (prim.ParticleSys.Pattern)
 			{
 				case Primitive.ParticleSystem.SourcePattern.Angle:
 					sh.shapeType = ParticleSystemShapeType.Circle;
-					sh.arc = (prim.ParticleSystem.OuterAngle - prim.ParticleSystem.InnerAngle) * Mathf.Rad2Deg;
+					sh.arc = (prim.ParticleSys.OuterAngle - prim.ParticleSys.InnerAngle) * Mathf.Rad2Deg;
 					break;
 				case Primitive.ParticleSystem.SourcePattern.Drop:
 					sh.shapeType = ParticleSystemShapeType.Sphere;
@@ -1156,7 +1176,7 @@ public class SimManager : MonoBehaviour
 					break;
 				case Primitive.ParticleSystem.SourcePattern.AngleCone:
 					sh.shapeType = ParticleSystemShapeType.Cone;
-					sh.angle = (prim.ParticleSystem.OuterAngle - prim.ParticleSystem.InnerAngle) * Mathf.Rad2Deg;
+					sh.angle = (prim.ParticleSys.OuterAngle - prim.ParticleSys.InnerAngle) * Mathf.Rad2Deg;
 					break;
 				case Primitive.ParticleSystem.SourcePattern.AngleConeEmpty:
 					sh.shapeType = ParticleSystemShapeType.Sphere;
@@ -1171,12 +1191,12 @@ public class SimManager : MonoBehaviour
 			grad.SetKeys(
 				new GradientColorKey[]
 				{
-						new GradientColorKey(prim.ParticleSystem.PartStartColor.ToUnity(), 0f),
-						new GradientColorKey(prim.ParticleSystem.PartEndColor.ToUnity(), 0f)
+						new GradientColorKey(prim.ParticleSys.PartStartColor.ToUnity(), 0f),
+						new GradientColorKey(prim.ParticleSys.PartEndColor.ToUnity(), 0f)
 				},
 				new GradientAlphaKey[]
 				{
-						new GradientAlphaKey(prim.ParticleSystem.PartStartColor.A, 0f),
+						new GradientAlphaKey(prim.ParticleSys.PartStartColor.A, 0f),
 						new GradientAlphaKey(prim.ParticleSys.PartEndColor.A, 1f)
 				});
 			col.color = grad;
@@ -1185,11 +1205,11 @@ public class SimManager : MonoBehaviour
 			sz.enabled = true;
 			sz.separateAxes = true;
 			AnimationCurve xcurve = new();
-			xcurve.AddKey(Mathf.Abs(scale.x) > 0.001f ? prim.ParticleSystem.PartStartScaleX / scale.x : 0, 0f);
-			xcurve.AddKey(Mathf.Abs(scale.x) > 0.001f ? prim.ParticleSystem.PartEndScaleX / scale.x : 0, 1f);
+			xcurve.AddKey(Mathf.Abs(scale.x) > 0.001f ? prim.ParticleSys.PartStartScaleX / scale.x : 0, 0f);
+			xcurve.AddKey(Mathf.Abs(scale.x) > 0.001f ? prim.ParticleSys.PartEndScaleX / scale.x : 0, 1f);
 			AnimationCurve ycurve = new();
-			ycurve.AddKey(Mathf.Abs(scale.y) > 0.001f ? prim.ParticleSystem.PartStartScaleY / scale.y : 0, 0f);
-			ycurve.AddKey(Mathf.Abs(scale.y) > 0.001f ? prim.ParticleSystem.PartEndScaleY / scale.y : 0, 1f);
+			ycurve.AddKey(Mathf.Abs(scale.y) > 0.001f ? prim.ParticleSys.PartStartScaleY / scale.y : 0, 0f);
+			ycurve.AddKey(Mathf.Abs(scale.y) > 0.001f ? prim.ParticleSys.PartEndScaleY / scale.y : 0, 1f);
 			AnimationCurve zcurve = new();
 			zcurve.AddKey(Mathf.Abs(scale.z) > 0.001f ? 1f / scale.z : 1f, 0f);
 			zcurve.AddKey(Mathf.Abs(scale.z) > 0.001f ? 1f / scale.z : 1f, 1f);
@@ -1198,7 +1218,7 @@ public class SimManager : MonoBehaviour
 			sz.y = new UnityEngine.ParticleSystem.MinMaxCurve(1f, ycurve);
 			sz.z = new UnityEngine.ParticleSystem.MinMaxCurve(1f, zcurve);
 
-			if (prim.ParticleSystem.PartDataFlags.HasFlag(Primitive.ParticleSystem.ParticleDataFlags.Bounce))
+			if (prim.ParticleSys.PartDataFlags.HasFlag(Primitive.ParticleSystem.ParticleDataFlags.Bounce))
 			{
 				var co = ps.collision;
 				co.enabled = true;
@@ -1210,7 +1230,7 @@ public class SimManager : MonoBehaviour
 				co.maxCollisionShapes = 10;
 			}
 
-			if (prim.ParticleSystem.PartDataFlags.HasFlag(Primitive.ParticleSystem.ParticleDataFlags.FollowSrc))
+			if (prim.ParticleSys.PartDataFlags.HasFlag(Primitive.ParticleSystem.ParticleDataFlags.FollowSrc))
 			{
 				main.simulationSpace = ParticleSystemSimulationSpace.Local;
 			}
@@ -1261,8 +1281,148 @@ public class SimManager : MonoBehaviour
 
 	private void SetupClassicPrimRenderer(SceneObject sceneObject)
 	{
-		//spd.RenderPrim();
-		_log.LogDebug(nameof(SetupMeshRenderer) + " not implemented.");
+		if (sceneObject.MeshHolder == null) return;
+
+		var prim = sceneObject.SimObject.Prim;
+		if (prim.PrimData.PCode != PCode.Prim && prim.PrimData.PCode != PCode.Avatar) return;
+
+		sceneObject.GameObject.GetComponent<Renderer>().enabled = false;
+		LODGroup group = sceneObject.MeshHolder.GetComponent<LODGroup>();
+		if (group == null) group = sceneObject.MeshHolder.AddComponent<LODGroup>();
+
+		Renderer[] highest = GeneratePrimForSceneObject(sceneObject, DetailLevel.Highest);
+		Renderer[] medium = GeneratePrimForSceneObject(sceneObject, DetailLevel.Medium);
+		Renderer[] low = GeneratePrimForSceneObject(sceneObject, DetailLevel.Low);
+
+		int totalLength = highest.Length + medium.Length + low.Length;
+		sceneObject.Renderers = new Renderer[totalLength];
+		highest.CopyTo(sceneObject.Renderers, 0);
+		medium.CopyTo(sceneObject.Renderers, highest.Length);
+		low.CopyTo(sceneObject.Renderers, highest.Length + medium.Length);
+
+		LOD[] lods = new LOD[3]
+		{
+			new LOD(1.0f, highest),
+			new LOD(0.5f, medium),
+			new LOD(0.1f, low)
+		};
+
+		group.SetLODs(lods);
+		group.fadeMode = LODFadeMode.SpeedTree;
+		group.animateCrossFading = true;
+		group.RecalculateBounds();
+		group.size = 10f;
+
+		if (IsHUD(prim)) group.enabled = false;
+	}
+
+	private Renderer[] GeneratePrimForSceneObject(SceneObject sceneObject, DetailLevel detailLevel)
+	{
+		var prim = sceneObject.SimObject.Prim;
+		if (prim.PrimData.PCode == PCode.Avatar) return new Renderer[0];
+
+		MeshmerizerR mesher = new();
+		FacetedMesh fmesh = mesher.GenerateFacetedMesh(prim, detailLevel);
+
+		GameObject gomesh;
+		Renderer rendr;
+		MeshFilter meshFilter;
+
+		// Create the mesh object
+		gomesh = Instantiate(ResourceCache.cubePrefab);
+		gomesh.name = $"Combined Mesh {detailLevel}";
+		gomesh.transform.parent = sceneObject.MeshHolder.transform;
+		gomesh.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+		gomesh.transform.localScale = Vector3.one;
+
+		rendr = gomesh.GetComponent<Renderer>();
+		rendr.enabled = true;
+		meshFilter = gomesh.GetComponent<MeshFilter>();
+		meshFilter.mesh = null;
+
+		PrimInfo pi = gomesh.GetComponent<PrimInfo>();
+		if (prim.LocalID == 0) Debug.Log("local ID cannot be 0");
+		pi.localID = prim.LocalID;
+		pi.uuid = prim.ID;
+
+		List<Vector3> allVertices = new List<Vector3>();
+		List<Vector3> allNormals = new List<Vector3>();
+		List<Vector2> allUvs = new List<Vector2>();
+		List<Material> materials = new List<Material>();
+		List<int> subMeshIndices = new List<int>();
+
+		int vertexOffset = 0;
+
+		// We need _transformTexCoords service
+		var transformTexCoords = Services.GetService<ITransformTexCoords>();
+
+		for (int j = 0; j < fmesh.Faces.Count; j++)
+		{
+			var faceVertices = fmesh.Faces[j].Vertices;
+			int vertexCount = faceVertices.Count;
+
+			Vector3[] vertices = new Vector3[vertexCount];
+			Vector3[] normals = new Vector3[vertexCount];
+			Vector2[] uvs = new Vector2[vertexCount];
+
+			Primitive.TextureEntryFace textureEntryFace = prim.Textures.GetFace((uint)j);
+
+			transformTexCoords.TransformTexCoords(faceVertices, fmesh.Faces[j].Center, textureEntryFace, prim.Scale);
+
+			for (int i = 0; i < vertexCount; i++)
+			{
+				vertices[i] = faceVertices[i].Position.ToUnity();
+				normals[i] = faceVertices[i].Normal.ToUnity() * -1f;
+				uvs[i] = faceVertices[i].TexCoord.ToUnity();
+			}
+
+			allVertices.AddRange(vertices);
+			allNormals.AddRange(normals);
+			allUvs.AddRange(uvs);
+
+			int[] indices = fmesh.Faces[j].Indices.Select(index => index + vertexOffset).ToArray();
+			subMeshIndices.AddRange(indices);
+
+			vertexOffset += vertexCount;
+
+			Color color = textureEntryFace.RGBA.ToUnity();
+			Material clonemat;
+
+			if (color.a < 0.999f)
+			{
+				clonemat = new Material(textureEntryFace.Fullbright ? ResourceCache.alphaFullbrightMaterial : ResourceCache.alphaMaterial);
+			}
+			else
+			{
+				clonemat = new Material(textureEntryFace.Fullbright ? ResourceCache.opaqueFullbrightMaterial : ResourceCache.opaqueMaterial);
+			}
+
+			clonemat.SetColor("_BaseColor", color);
+			materials.Add(clonemat);
+		}
+
+		rendr.materials = materials.ToArray();
+
+		Mesh mesh = new Mesh();
+		mesh.SetVertices(allVertices);
+		mesh.SetNormals(allNormals);
+		mesh.SetUVs(0, allUvs);
+
+		mesh.subMeshCount = fmesh.Faces.Count;
+
+		int offset = 0;
+		for (int j = 0; j < fmesh.Faces.Count; j++)
+		{
+			pi.face = j;
+			int count = fmesh.Faces[j].Indices.Count;
+			mesh.SetTriangles(subMeshIndices.GetRange(offset, count), j);
+			offset += count;
+			TextureFace(prim, j, rendr);
+		}
+
+		meshFilter.sharedMesh = mesh.ReverseWind().FlipNormals();
+
+		return new Renderer[] { rendr };
 	}
 
 	private void SetupMeshRenderer(SceneObject sceneObject)

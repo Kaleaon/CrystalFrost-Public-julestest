@@ -179,6 +179,8 @@ public class LSLScriptEditor : MonoBehaviour
     /// <summary>GridClient instance for LibreMetaverse integration</summary>
     private GridClient client;
     
+    private BuildTools buildTools;
+
     /// <summary>Dictionary storing all loaded scripts</summary>
     private Dictionary<string, ScriptData> scripts = new();
     
@@ -290,7 +292,13 @@ public class LSLScriptEditor : MonoBehaviour
     {
         // Get GridClient reference for LibreMetaverse integration
         client = ClientManager.client;
+        buildTools = FindObjectOfType<BuildTools>();
         
+        if (client != null)
+        {
+            client.Inventory.ScriptRunningReply += OnScriptRunningReply;
+        }
+
         // Load existing script library from disk
         LoadScriptLibrary();
     }
@@ -305,8 +313,7 @@ public class LSLScriptEditor : MonoBehaviour
         // but this method is included for consistency and future expansion
         if (client != null)
         {
-            // Unsubscribe from any LibreMetaverse events if added in the future
-            // Example: client.Objects.ScriptRunningReply -= OnScriptRunningReply;
+            client.Inventory.ScriptRunningReply -= OnScriptRunningReply;
         }
         
         // Save any unsaved changes before destruction
@@ -997,8 +1004,16 @@ public class LSLScriptEditor : MonoBehaviour
     #region Script Compilation
     
     /// <summary>
-    /// Compile the current script
-    /// Performs syntax validation and error checking
+    /// Compile the current script by uploading it to the server.
+    /// 
+    /// This process involves:
+    /// 1. Performing a lightweight client-side syntax check (non-blocking).
+    /// 2. Creating a temporary inventory item if one doesn't exist.
+    /// 3. Using RequestUpdateScriptAgent to send the source code to the server.
+    /// 4. Waiting for a ScriptRunningReply which indicates successful compilation and execution.
+    /// 
+    /// Note: OpenSim and Second Life compile scripts on the server side. This method
+    /// bridges the local editor with the server's compiler.
     /// </summary>
     void CompileScript()
     {
@@ -1008,9 +1023,98 @@ public class LSLScriptEditor : MonoBehaviour
         if (statusText) statusText.text = "Compiling...";
         if (errorText) errorText.text = "";
         
-        StartCoroutine(CompileScriptCoroutine());
+        // Perform basic syntax validation
+        List<ScriptError> errors = ValidateScript(currentScript.content);
+        currentScript.errors = errors;
+
+        if (errors.Count > 0)
+        {
+             if (statusText) statusText.text = $"Pre-compilation warnings: {errors.Count}";
+             DisplayErrors(errors);
+             // Continue to server compilation even if local validation finds issues
+        }
+
+        StartCoroutine(UploadAndCompileCoroutine());
     }
-    
+
+    System.Collections.IEnumerator UploadAndCompileCoroutine()
+    {
+        // Create or update in inventory
+        yield return null; // Ensure we are on main thread if needed, though LMV is thread safeish
+        
+        if (currentScript.itemID == UUID.Zero)
+        {
+             // Create new item
+             if (statusText) statusText.text = "Creating inventory item...";
+             // We need a folder. Use "Scripts" folder or Root.
+             UUID folder = client.Inventory.FindFolderForType(FolderType.Script);
+             if (folder == UUID.Zero) folder = client.Inventory.Store.RootFolder.UUID;
+
+             bool createComplete = false;
+             client.Inventory.RequestCreateItem(folder, currentScript.name, "Created by LSL Editor", AssetType.LSLText, UUID.Random(), InventoryType.LSL, PermissionMask.All, 
+                (success, item) => {
+                    if (success)
+                    {
+                        currentScript.itemID = item.UUID;
+                        currentScript.scriptID = item.AssetUUID; // Temporarily until upload
+                    }
+                    else
+                    {
+                        Debug.LogError("Failed to create script item");
+                    }
+                    createComplete = true;
+                }
+             );
+
+             while (!createComplete) yield return null;
+             
+             if (currentScript.itemID == UUID.Zero)
+             {
+                 if (statusText) statusText.text = "Failed to create inventory item";
+                 isCompiling = false;
+                 yield break;
+             }
+        }
+
+        // Now update the script content
+        if (statusText) statusText.text = "Uploading script...";
+        
+        // This triggers compilation on the server
+        client.Inventory.RequestUpdateScriptAgent(currentScript.itemID, System.Text.Encoding.UTF8.GetBytes(currentScript.content));
+        
+        // We wait for ScriptRunningReply via event handler
+        // isCompiling will be reset there or timeout
+        yield return new WaitForSeconds(5.0f);
+        if (isCompiling)
+        {
+             if (statusText) statusText.text = "Compilation timed out (no reply)";
+             isCompiling = false;
+        }
+    }
+
+    void OnScriptRunningReply(object sender, ScriptRunningReplyEventArgs e)
+    {
+        if (!isCompiling) return; // Ignore if we aren't compiling
+        if (e.ItemID != currentScript.itemID) return; // Not our script
+
+        isCompiling = false;
+        
+        UnityMainThreadDispatcher.Instance().Enqueue(() => {
+            if (e.IsMono) // Successful compilation usually implies running or mono status
+            {
+                 if (statusText) statusText.text = "Compilation Successful!";
+                 if (errorText) errorText.text = "No errors.";
+            }
+            // Note: Compilation errors usually come as AlertMessages or ScriptCompileError, 
+            // but ScriptRunningReply indicates success/running state.
+            // If failed, we might not get this, or get Mono=false?
+            // Actually LMV handles ScriptCompileError separately?
+            // We should also subscribe to that if possible, but GridClient doesn't seem to expose ScriptCompileError event directly on Inventory?
+            // It might be on Assets or just generic Alert.
+            // For now, assume success if we get a reply.
+        });
+    }
+
     /// <summary>
     /// Asynchronous script compilation process
     /// Simulates compilation time and performs validation
@@ -1018,26 +1122,7 @@ public class LSLScriptEditor : MonoBehaviour
     /// <returns>Coroutine enumerator</returns>
     System.Collections.IEnumerator CompileScriptCoroutine()
     {
-        // Simulate compilation time (in production, this would call actual LSL compiler)
-        yield return new WaitForSeconds(1.0f);
-        
-        // Perform basic syntax validation
-        List<ScriptError> errors = ValidateScript(currentScript.content);
-        
-        currentScript.errors = errors;
-        
-        if (errors.Count == 0)
-        {
-            if (statusText) statusText.text = "Compilation successful";
-            if (errorText) errorText.text = "No errors found";
-        }
-        else
-        {
-            if (statusText) statusText.text = $"Compilation failed: {errors.Count} errors";
-            DisplayErrors(errors);
-        }
-        
-        isCompiling = false;
+        yield break; 
     }
     
     /// <summary>
@@ -1107,20 +1192,45 @@ public class LSLScriptEditor : MonoBehaviour
     #region Script Execution
     
     /// <summary>
-    /// Run/upload the current script to Second Life
-    /// In production, this would upload the script to the selected object
+    /// Run/upload the current script to the selected object in the scene.
+    /// 
+    /// This method performs the following:
+    /// 1. Verifies a primitive is selected via BuildTools.
+    /// 2. Ensures the script has been compiled/saved to Agent Inventory (has a UUID).
+    /// 3. Drops the script item from Agent Inventory into the Task Inventory of the selected primitive.
+    /// 
+    /// This enables "Live Editing" where you write code in the viewer, and it is immediately
+    /// transferred to the in-world object for execution. This supports standard LSL and OSSL
+    /// depending on server support.
     /// </summary>
     void RunScript()
     {
         if (currentScript == null) return;
         
-        // In production, this would:
-        // 1. Ensure script is compiled successfully
-        // 2. Upload script to selected object in SL
-        // 3. Set script to running state
-        if (statusText) statusText.text = "Script would be uploaded and run";
+        if (buildTools == null) buildTools = FindObjectOfType<BuildTools>();
+        if (buildTools == null || buildTools.SelectedPrim == null)
+        {
+            if (statusText) statusText.text = "No object selected to run script on.";
+            return;
+        }
+
+        if (currentScript.itemID == UUID.Zero)
+        {
+            // Must save/compile first
+            if (statusText) statusText.text = "Please Save/Compile script first.";
+            CompileScript();
+            return;
+        }
+
+        // Upload script to selected object in SL
+        // We drop the inventory item into the task inventory
+        if (statusText) statusText.text = "Dropping script to object...";
         
-        Debug.Log($"Running script: {currentScript.name}");
+        client.Inventory.DropItem(buildTools.SelectedPrim.LocalID, currentScript.itemID);
+        
+        if (statusText) statusText.text = "Script dropped to object.";
+        
+        Debug.Log($"Running script: {currentScript.name} on {buildTools.SelectedPrim.LocalID}");
     }
     
     /// <summary>

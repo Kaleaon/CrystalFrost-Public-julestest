@@ -311,6 +311,7 @@ public class BuildTools : MonoBehaviour
     private GameObject selectedObject;
     
     /// <summary>Currently selected primitive data</summary>
+    public Primitive SelectedPrim => selectedPrim;
     private Primitive selectedPrim;
     
     /// <summary>List of currently selected objects for multi-selection</summary>

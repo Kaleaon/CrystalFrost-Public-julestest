@@ -999,7 +999,7 @@ public class SimManager : MonoBehaviour
 
 	private void ServiceSceneObjectsNeedingRenderersQueue()
 	{
-		// ServiceQueueRepeatedly(_needRenderDataQueue, DoSceneObjectNeedingRenderer);
+		ServiceQueueRepeatedly(_needRenderDataQueue, SetupRenderDataForObject);
 	}
 
 	private void DoSceneObjectNeedingRenderer(SceneObject obj)
@@ -1075,11 +1075,165 @@ public class SimManager : MonoBehaviour
 
 	private void SetupParticles(SceneObject sceneObject)
 	{
-		if (sceneObject.SimObject.ParticleSystem.Pattern == Primitive.ParticleSystem.SourcePattern.None) return;
-		// TODO - Kage
-		//	UnityEngine.ParticleSystem ps = spd.obj.AddComponent<UnityEngine.ParticleSystem>();
-		//	spd.SetupParticles();
-		_log.LogDebug(nameof(SetupParticles) + " not implemented.");
+		var prim = sceneObject.SimObject.Prim;
+		if (prim.ParticleSystem.Pattern == Primitive.ParticleSystem.SourcePattern.None && sceneObject.GameObject.GetComponent<UnityEngine.ParticleSystem>() == null) return;
+
+		var obj = sceneObject.GameObject;
+		bool hasParticles = obj.GetComponent<UnityEngine.ParticleSystem>() != null;
+		
+		if (prim.ParticleSystem.Pattern != Primitive.ParticleSystem.SourcePattern.None)
+		{
+			UnityEngine.ParticleSystem ps = obj.GetComponent<UnityEngine.ParticleSystem>();
+			if(ps == null) ps = obj.AddComponent<UnityEngine.ParticleSystem>();
+
+			if (!hasParticles) ps.Stop();
+			var main = ps.main;
+
+			AnimationCurve burstSpeedCurve = new();
+			burstSpeedCurve.AddKey(prim.ParticleSystem.BurstSpeedMin, 0f);
+			burstSpeedCurve.AddKey(prim.ParticleSys.BurstSpeedMax, 1f);
+			main.startSpeed = new UnityEngine.ParticleSystem.MinMaxCurve(1f, burstSpeedCurve);
+
+			main.startLifetime = prim.ParticleSystem.PartMaxAge;
+			
+			if (!hasParticles)
+			{
+				if (prim.ParticleSystem.MaxAge != 0f)
+				{
+					main.loop = false;
+					main.duration = prim.ParticleSystem.MaxAge;
+				}
+			}
+
+			var em = ps.emission;
+			em.enabled = true;
+			em.rateOverTime = prim.ParticleSystem.BurstPartCount / prim.ParticleSystem.BurstRate;
+
+			var fo = ps.forceOverLifetime;
+
+			fo.enabled = true;
+			Vector3 vec = prim.ParticleSystem.PartAcceleration.ToVector3();
+			
+			var scale = obj.transform.lossyScale;
+			if (Mathf.Abs(scale.x) > 0.001f) fo.x = vec.x / scale.x;
+			if (Mathf.Abs(scale.y) > 0.001f) fo.y = vec.y / scale.y;
+			if (Mathf.Abs(scale.z) > 0.001f) fo.z = vec.z / scale.z;
+
+			vec = prim.ParticleSystem.AngularVelocity.ToVector3() * Mathf.Rad2Deg;
+
+			var vel = ps.velocityOverLifetime;
+			vel.enabled = true;
+
+			vel.orbitalX = vec.x;
+			vel.orbitalY = vec.y;
+			vel.orbitalZ = vec.z;
+
+			var sh = ps.shape;
+			sh.enabled = true;
+			float mag = scale.magnitude;
+			sh.radius = mag > 0 ? (prim.ParticleSystem.BurstRadius / mag) * 2f : 0;
+			sh.rotation = new Vector3(-90f, 0f, 0f);
+
+			ParticleSystemRenderer r = ps.GetComponent<ParticleSystemRenderer>();
+			r.material = Instantiate(ResourceCache.particleMaterial);
+			r.material.SetTexture("_BaseMap", ClientManager.assetManager.RequestTexture(prim.ParticleSystem.Texture));
+
+			switch (prim.ParticleSystem.Pattern)
+			{
+				case Primitive.ParticleSystem.SourcePattern.Angle:
+					sh.shapeType = ParticleSystemShapeType.Circle;
+					sh.arc = (prim.ParticleSystem.OuterAngle - prim.ParticleSystem.InnerAngle) * Mathf.Rad2Deg;
+					break;
+				case Primitive.ParticleSystem.SourcePattern.Drop:
+					sh.shapeType = ParticleSystemShapeType.Sphere;
+					sh.radius = 0f;
+					main.startSpeed = 0f;
+					break;
+				case Primitive.ParticleSystem.SourcePattern.Explode:
+					sh.shapeType = ParticleSystemShapeType.Sphere;
+					sh.radiusThickness = 1f;
+					sh.arc = 360f;
+					break;
+				case Primitive.ParticleSystem.SourcePattern.AngleCone:
+					sh.shapeType = ParticleSystemShapeType.Cone;
+					sh.angle = (prim.ParticleSystem.OuterAngle - prim.ParticleSystem.InnerAngle) * Mathf.Rad2Deg;
+					break;
+				case Primitive.ParticleSystem.SourcePattern.AngleConeEmpty:
+					sh.shapeType = ParticleSystemShapeType.Sphere;
+					sh.radius = 0f;
+					main.startSpeed = 0f;
+					break;
+			}
+
+			var col = ps.colorOverLifetime;
+			col.enabled = true;
+			Gradient grad = new();
+			grad.SetKeys(
+				new GradientColorKey[]
+				{
+						new GradientColorKey(prim.ParticleSystem.PartStartColor.ToUnity(), 0f),
+						new GradientColorKey(prim.ParticleSystem.PartEndColor.ToUnity(), 0f)
+				},
+				new GradientAlphaKey[]
+				{
+						new GradientAlphaKey(prim.ParticleSystem.PartStartColor.A, 0f),
+						new GradientAlphaKey(prim.ParticleSys.PartEndColor.A, 1f)
+				});
+			col.color = grad;
+
+			var sz = ps.sizeOverLifetime;
+			sz.enabled = true;
+			sz.separateAxes = true;
+			AnimationCurve xcurve = new();
+			xcurve.AddKey(Mathf.Abs(scale.x) > 0.001f ? prim.ParticleSystem.PartStartScaleX / scale.x : 0, 0f);
+			xcurve.AddKey(Mathf.Abs(scale.x) > 0.001f ? prim.ParticleSystem.PartEndScaleX / scale.x : 0, 1f);
+			AnimationCurve ycurve = new();
+			ycurve.AddKey(Mathf.Abs(scale.y) > 0.001f ? prim.ParticleSystem.PartStartScaleY / scale.y : 0, 0f);
+			ycurve.AddKey(Mathf.Abs(scale.y) > 0.001f ? prim.ParticleSystem.PartEndScaleY / scale.y : 0, 1f);
+			AnimationCurve zcurve = new();
+			zcurve.AddKey(Mathf.Abs(scale.z) > 0.001f ? 1f / scale.z : 1f, 0f);
+			zcurve.AddKey(Mathf.Abs(scale.z) > 0.001f ? 1f / scale.z : 1f, 1f);
+			
+			sz.x = new UnityEngine.ParticleSystem.MinMaxCurve(1f, xcurve);
+			sz.y = new UnityEngine.ParticleSystem.MinMaxCurve(1f, ycurve);
+			sz.z = new UnityEngine.ParticleSystem.MinMaxCurve(1f, zcurve);
+
+			if (prim.ParticleSystem.PartDataFlags.HasFlag(Primitive.ParticleSystem.ParticleDataFlags.Bounce))
+			{
+				var co = ps.collision;
+				co.enabled = true;
+				co.quality = ParticleSystemCollisionQuality.Low;
+				co.enableDynamicColliders = true;
+				co.collidesWith = LayerMask.GetMask(new string[] { "Default", "Transparent", "Glow", "Terrain", "Water" });
+				co.type = ParticleSystemCollisionType.World;
+				co.mode = ParticleSystemCollisionMode.Collision3D;
+				co.maxCollisionShapes = 10;
+			}
+
+			if (prim.ParticleSystem.PartDataFlags.HasFlag(Primitive.ParticleSystem.ParticleDataFlags.FollowSrc))
+			{
+				main.simulationSpace = ParticleSystemSimulationSpace.Local;
+			}
+			else
+			{
+				main.simulationSpace = ParticleSystemSimulationSpace.World;
+			}
+
+			if (prim.ParticleSys.HasGlow())
+			{
+				obj.layer = 7;
+			}
+			else
+			{
+				obj.layer = 0;
+			}
+
+			if (!hasParticles) ps.Play();
+		}
+		else if (hasParticles)
+		{
+			Destroy(obj.GetComponent<UnityEngine.ParticleSystem>());
+		}
 	}
 
 	/// <summary>
@@ -1113,26 +1267,14 @@ public class SimManager : MonoBehaviour
 
 	private void SetupMeshRenderer(SceneObject sceneObject)
 	{
-		//				spd.obj.name = $"mesh: {spd.prim.LocalID}";
-		//				mr = spd.obj.GetComponent<MeshRenderer>();
-		//				mr.enabled = false;
-
-		//				ClientManager.assetManager.RequestMesh2(spd.obj, spd.prim, spd.prim.Sculpt.SculptTexture, spd.meshHolder);
-
-		//				if (!spd.prim.IsAttachment && spd.prim.Velocity.Length() == 0f && spd.prim.AngularVelocity.Length() == 0f) ClientManager.client.Objects.SelectObject(ClientManager.client.Network.CurrentSim, spd.prim.LocalID);
-		_log.LogDebug(nameof(SetupMeshRenderer) + " not implemented.");
+		if (sceneObject.MeshHolder == null) return;
+		ClientManager.assetManager.RequestMesh2(sceneObject.GameObject, sceneObject.SimObject.Prim, sceneObject.SimObject.Prim.Sculpt.SculptTexture, sceneObject.MeshHolder);
 	}
 
 	private void SetupSculptRenderer(SceneObject sceneObject)
 	{
-		//				//Debug.Log("Is Sculpt");
-		//				spd.obj.name = $"sculpt: {spd.prim.LocalID}";
-		//				mr = spd.obj.GetComponent<MeshRenderer>();
-		//				mr.enabled = false;
-		//				//Request mesh from server.
-		//				ClientManager.simManager.meshRequests.Add(new SimManager.MeshRequestData(spd.prim.LocalID, spd.prim.Sculpt.SculptTexture, spd.meshHolder));
-		//				ClientManager.assetManager.RequestSculpt(spd.meshHolder, spd.prim);
-		_log.LogDebug(nameof(SetupSculptRenderer) + " not implemented.");
+		if (sceneObject.MeshHolder == null) return;
+		ClientManager.assetManager.RequestSculpt(sceneObject.MeshHolder, sceneObject.SimObject.Prim);
 	}
 
 	private void RemoveRenderers(SceneObject sceneObject)

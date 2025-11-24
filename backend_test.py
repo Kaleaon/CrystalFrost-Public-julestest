@@ -12,7 +12,7 @@ from typing import List, Dict, Tuple, Set
 import json
 
 class UnityScriptTester:
-    def __init__(self, project_root: str = "/app"):
+    def __init__(self, project_root: str = "/workspace"):
         self.project_root = Path(project_root)
         self.scripts_path = self.project_root / "Assets" / "Scripts"
         self.test_results = []

@@ -9,6 +9,11 @@ namespace CrystalFrost.Assets.Mesh
 {
 	public static class MeshExtensions
 	{
+		/// <summary>
+		/// Reverses the winding order of the triangles in a mesh.
+		/// </summary>
+		/// <param name="mesh">The mesh to modify.</param>
+		/// <returns>The modified mesh.</returns>
 		public static UnityEngine.Mesh ReverseWind(this UnityEngine.Mesh mesh)
 		{
 			var indices = mesh.triangles;
@@ -25,6 +30,11 @@ namespace CrystalFrost.Assets.Mesh
 			return mesh;
 		}
 
+		/// <summary>
+		/// Flips the normals of a mesh.
+		/// </summary>
+		/// <param name="mesh">The mesh to modify.</param>
+		/// <returns>The modified mesh.</returns>
 		public static UnityEngine.Mesh FlipNormals(this UnityEngine.Mesh mesh)
 		{
 			var normals = mesh.normals;
@@ -38,8 +48,10 @@ namespace CrystalFrost.Assets.Mesh
 		}
 
 		/// <summary>
-		/// Converts a OpenMetaverse.Reandering.Face into RawMeshData.
+		/// Converts a OpenMetaverse.Rendering.Face into RawMeshData.
 		/// </summary>
+		/// <param name="face">The face to convert.</param>
+		/// <returns>The converted raw mesh data.</returns>
 		public static RawMeshData ToRawMeshData(this Face face)
 		{
 			var indices = face.Indices.ToArray();
@@ -60,6 +72,13 @@ namespace CrystalFrost.Assets.Mesh
 			return new RawMeshData(vertices, uvs, normals, indices);
 		}
 
+		/// <summary>
+		/// Converts a OpenMetaverse.Rendering.Face into RawMeshData, including joint influences.
+		/// </summary>
+		/// <param name="face">The face to convert.</param>
+		/// <param name="jointInfluences">The joint influences for the face.</param>
+		/// <param name="joints">The joints for the mesh.</param>
+		/// <returns>The converted raw mesh data.</returns>
 		public static RawMeshData ToRawMeshData(this Face face, List<JointInfluence[]> jointInfluences, JointInfo[] joints)
 		{
 			var rmd = face.ToRawMeshData();
@@ -102,14 +121,22 @@ namespace CrystalFrost.Assets.Mesh
 		}
 
 		/// <summary>
-		/// Converts a OpenMetaverse.Reandering.Face into RawMeshData.
+		/// Converts a OpenMetaverse.Rendering.Face into RawMeshData.
 		/// </summary>
+		/// <param name="fmesh">The faceted mesh.</param>
+		/// <param name="face">The index of the face to convert.</param>
+		/// <returns>The converted raw mesh data.</returns>
 		[Obsolete("Decode FacetedMesh.Face[face] directly.")]
 		public static RawMeshData ToRawMeshData(FacetedMesh fmesh, int face)
 		{
 			return ToRawMeshData(fmesh.Faces[face]);
 		}
 
+		/// <summary>
+		/// Converts a list of RawMeshData into a Unity mesh array.
+		/// </summary>
+		/// <param name="meshData">The list of raw mesh data to convert.</param>
+		/// <returns>The converted Unity mesh array.</returns>
 		public static UnityEngine.Mesh[] ToUnityMeshArray(this List<RawMeshData> meshData)
 		{
 			// I wonder if linq is comparable in speed?
@@ -122,6 +149,11 @@ namespace CrystalFrost.Assets.Mesh
 			return result;
 		}
 
+		/// <summary>
+		/// Converts RawMeshData into a Unity mesh.
+		/// </summary>
+		/// <param name="rmd">The raw mesh data to convert.</param>
+		/// <returns>The converted Unity mesh.</returns>
 		public static UnityEngine.Mesh ToUnityMesh(this RawMeshData rmd)
 		{
 			var result = new UnityEngine.Mesh

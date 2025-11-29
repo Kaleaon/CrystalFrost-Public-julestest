@@ -11,6 +11,9 @@ using System.Linq;
 namespace CrystalFrost.Assets.Textures.CSJ2K
 {
 
+    /// <summary>
+    /// Represents a bitmap image source.
+    /// </summary>
     internal class BitmapImageSource : PortableImageSource
     {
         private BitmapImageSource(Bitmap bitmap)
@@ -24,6 +27,11 @@ namespace CrystalFrost.Assets.Textures.CSJ2K
         {
         }
 
+        /// <summary>
+        /// Creates a new <see cref="BitmapImageSource"/> from the specified image object.
+        /// </summary>
+        /// <param name="imageObject">The image object to create the source from.</param>
+        /// <returns>A new <see cref="BitmapImageSource"/>.</returns>
         internal static BlkImgDataSrc Create(object imageObject)
         {
             var bitmap = imageObject as Bitmap;

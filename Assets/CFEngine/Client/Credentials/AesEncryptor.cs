@@ -19,13 +19,28 @@ using CrystalFrost.Config;
 
 namespace CrystalFrost.Client.Credentials
 {
+	/// <summary>
+	/// Defines the interface for an AES encryptor.
+	/// </summary>
 	public interface IAesEncryptor
 	{
-
+		/// <summary>
+		/// Encrypts the specified data.
+		/// </summary>
+		/// <param name="data">The data to encrypt.</param>
+		/// <returns>The encrypted data.</returns>
 		byte[] Encrypt(byte[] data);
+		/// <summary>
+		/// Decrypts the specified data.
+		/// </summary>
+		/// <param name="encryptedData">The data to decrypt.</param>
+		/// <returns>The decrypted data.</returns>
 		byte[] Decrypt(byte[] encryptedData);
 	}
 
+	/// <summary>
+	/// Encrypts and decrypts data using AES.
+	/// </summary>
 	public class AesEncryptor : IAesEncryptor
 	{
 		private static readonly System.Random random = new System.Random();
@@ -33,12 +48,17 @@ namespace CrystalFrost.Client.Credentials
 		private readonly ILogger<IAesEncryptor> _log;
 		private byte[] _key;
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="AesEncryptor"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
 		public AesEncryptor(ILogger<IAesEncryptor> log)
 		{
 			_log = log;
 			_key = LoadKey();
 		}
 
+		/// <inheritdoc/>
 		public byte[] Encrypt(byte[] data)
 		{
 			using (var aes = Aes.Create())
@@ -62,6 +82,7 @@ namespace CrystalFrost.Client.Credentials
 			}
 		}
 
+		/// <inheritdoc/>
 		public byte[] Decrypt(byte[] encryptedData)
 		{
 			using (var aes = Aes.Create())
@@ -137,6 +158,12 @@ namespace CrystalFrost.Client.Credentials
 			}
 		}
 
+		/// <summary>
+		/// Generates a key that is specific to the device.
+		/// </summary>
+		/// <param name="deviceId">The device ID.</param>
+		/// <param name="otherInfo">Other information to include in the key.</param>
+		/// <returns>The generated key.</returns>
 		public byte[] GenerateKeyDeviceSpecific(string deviceId, string otherInfo)
 		{
 			string combinedInfo = deviceId + otherInfo;
@@ -153,7 +180,11 @@ namespace CrystalFrost.Client.Credentials
 			}
 		}
 
-
+		/// <summary>
+		/// Generates a key from the specified information.
+		/// </summary>
+		/// <param name="info">The information to generate the key from.</param>
+		/// <returns>The generated key.</returns>
 		public byte[] GenerateKey(string info)
 		{
 			byte[] combinedBytes = Encoding.UTF8.GetBytes(info);
@@ -169,6 +200,11 @@ namespace CrystalFrost.Client.Credentials
 			}
 		}
 
+		/// <summary>
+		/// Generates a random string of the specified length.
+		/// </summary>
+		/// <param name="length">The length of the string to generate.</param>
+		/// <returns>The generated string.</returns>
 		public static string GenerateRandomString(int length)
 		{
 			StringBuilder stringBuilder = new StringBuilder(length);

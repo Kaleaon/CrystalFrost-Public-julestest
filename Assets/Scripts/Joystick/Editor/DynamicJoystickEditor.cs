@@ -8,6 +8,9 @@ using UnityEditor;
 
 #if UNITY_EDITOR
 
+/// <summary>
+/// The editor for the DynamicJoystick.
+/// </summary>
 [CustomEditor(typeof(DynamicJoystick))]
 public class DynamicJoystickEditor : JoystickEditor
 {
@@ -19,6 +22,7 @@ public class DynamicJoystickEditor : JoystickEditor
         moveThreshold = serializedObject.FindProperty("moveThreshold");
     }
 
+    /// <inheritdoc/>
     public override void OnInspectorGUI()
     {
         base.OnInspectorGUI();

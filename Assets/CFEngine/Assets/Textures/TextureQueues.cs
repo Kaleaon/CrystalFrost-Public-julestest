@@ -10,6 +10,7 @@ namespace CrystalFrost.Assets.Textures
     /// </summary>
     public interface IDownloadedTextureQueue : IConcurrentQueue<AssetTexture> { }
 
+    /// <inheritdoc/>
     public class TextureQueues : AbstractedConcurrentQueue<AssetTexture>, IDownloadedTextureQueue { }
 
 
@@ -17,7 +18,7 @@ namespace CrystalFrost.Assets.Textures
 	/// A queue for meshes that have been decoded but not cached.
 	/// </summary>
 	public interface IDecodedTextureCacheQueue : IConcurrentQueue<DecodedTexture> { }
-
+    /// <inheritdoc/>
 	public class DownloadedTextureCacheQueue : AbstractedConcurrentQueue<DecodedTexture>, IDecodedTextureCacheQueue { }
 
 
@@ -26,14 +27,14 @@ namespace CrystalFrost.Assets.Textures
 	/// the main thread to pick up and read into Graphics memory.
 	/// </summary>
 	public interface IReadyTextureQueue : IConcurrentQueue<DecodedTexture> { }
-
+    /// <inheritdoc/>
     public class ReadyTextureQueue : AbstractedConcurrentQueue<DecodedTexture>, IReadyTextureQueue { }
 
     /// <summary>
     /// A queue for textures that have not been downloaded.
     /// </summary>
     public interface ITextureDownloadRequestQueue : IConcurrentQueue<UUID> { }
-
+    /// <inheritdoc/>
     public class TextureDownloadRequestQueue : AbstractedConcurrentQueue<UUID> , ITextureDownloadRequestQueue{ }
 
 
@@ -41,6 +42,6 @@ namespace CrystalFrost.Assets.Textures
 	/// A queue for textures that have been requested (from cache or downloads)
 	/// </summary>
 	public interface ITextureRequestQueue : IConcurrentQueue<UUID> { }
-
+    /// <inheritdoc/>
 	public class TextureRequestQueue : AbstractedConcurrentQueue<UUID>, ITextureRequestQueue { }
 }

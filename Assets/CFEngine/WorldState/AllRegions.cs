@@ -21,16 +21,24 @@ namespace CrystalFrost.WorldState
 		Region GetOrDefault(UUID regionID);
 	}
 
+	/// <summary>
+	/// A collection of all regions.
+	/// </summary>
 	public class AllRegions : IAllRegions
 	{
 		private ConcurrentDictionary<UUID, Region> _regions = new();
 		private ILogger<AllRegions> _log;
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="AllRegions"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
 		public AllRegions(ILogger<AllRegions> log)
 		{
 			_log = log;
 		}
 
+		/// <inheritdoc/>
 		public Region AddOrUpdate(Simulator simulator)
 		{
 			return _regions.AddOrUpdate(
@@ -39,6 +47,7 @@ namespace CrystalFrost.WorldState
 				(id, existing) => UpdateRegionFromSimulator(existing, simulator));
 		}
 
+		/// <inheritdoc/>
 		public Region GetOrDefault(UUID regionID)
 		{
 			return _regions.ContainsKey(regionID) ? _regions[regionID] : null;

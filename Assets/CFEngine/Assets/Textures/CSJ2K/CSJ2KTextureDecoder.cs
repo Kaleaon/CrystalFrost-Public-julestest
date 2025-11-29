@@ -8,21 +8,34 @@ using CrystalFrost.Timing;
 
 namespace CrystalFrost.Assets.Textures.CSJ2K
 {
+    /// <summary>
+    /// A texture decoder that uses the CSJ2K library.
+    /// </summary>
     public class CSJ2KTextureDecoder : ITextureDecoder
     {
         private readonly ILogger<CSJ2KTextureDecoder> _log;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CSJ2KTextureDecoder"/> class.
+        /// </summary>
+        /// <param name="log">A logger for logging messages.</param>
         public CSJ2KTextureDecoder(
             ILogger<CSJ2KTextureDecoder> log)
         {
             _log = log;
         }
 
+        /// <inheritdoc/>
         public Task<DecodedTexture> Decode(AssetTexture texture)
         {
             return Perf.Measure("CSJ2KTextureDecoder.Decode", () => DecodeImpl(texture));
         }
 
+        /// <summary>
+        /// Decodes a texture using the CSJ2K library.
+        /// </summary>
+        /// <param name="texture">The texture to decode.</param>
+        /// <returns>The decoded texture.</returns>
         public Task<DecodedTexture> DecodeImpl(AssetTexture texture)
         {
             RawBytesImageCreator.Register();

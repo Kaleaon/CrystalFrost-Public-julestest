@@ -11,13 +11,28 @@ namespace OpenMetaverse.Rendering
 {
 	#region Mesh Classes
 
+	/// <summary>
+	/// Represents information about a joint in a rigged mesh.
+	/// </summary>
 	public class JointInfo
 	{
+		/// <summary>
+		/// The name of the joint.
+		/// </summary>
 		public string Name;
+		/// <summary>
+		/// The inverse bind matrix for the joint.
+		/// </summary>
 		public float[] InverseBindMatrix;
+		/// <summary>
+		/// The alternative inverse bind matrix for the joint.
+		/// </summary>
 		public float[] AltInverseBindMatrix;
 		// public int Parent;
 
+		/// <summary>
+		/// The inverse bind matrix as a Unity Matrix4x4.
+		/// </summary>
 		public Matrix4x4 InverseBindMatrixUnity
 		{
 			get
@@ -27,6 +42,9 @@ namespace OpenMetaverse.Rendering
 			}
 		}
 
+		/// <summary>
+		/// The alternative inverse bind matrix as a Unity Matrix4x4.
+		/// </summary>
 		public Matrix4x4 AltInverseBindMatrixUnity
 		{
 			get
@@ -36,16 +54,33 @@ namespace OpenMetaverse.Rendering
 			}
 		}
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="JointInfo"/> class.
+		/// </summary>
 		public JointInfo()
 		{
 		}
 	}
 
+	/// <summary>
+	/// Represents the influence of a joint on a vertex.
+	/// </summary>
 	public struct JointInfluence
 	{
+		/// <summary>
+		/// The index of the joint.
+		/// </summary>
 		public byte JointIndex { get; }
+		/// <summary>
+		/// The weight of the influence.
+		/// </summary>
 		public float WeightValue { get; }
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="JointInfluence"/> struct.
+		/// </summary>
+		/// <param name="jointIndex">The index of the joint.</param>
+		/// <param name="weightValue">The weight of the influence.</param>
 		public JointInfluence(byte jointIndex, float weightValue)
 		{
 			JointIndex = jointIndex;
@@ -56,17 +91,43 @@ namespace OpenMetaverse.Rendering
 	/// <summary>
 	/// Contains all mesh faces that belong to a prim
 	/// </summary>
+	/// <summary>
+	/// Contains all mesh faces that belong to a prim
+	/// </summary>
 	public class RiggedMesh : Mesh
 	{
-		/// <summary>List of primitive faces</summary>
-
+		/// <summary>
+		/// A list of joint influences for each face.
+		/// </summary>
 		public List<List<JointInfluence[]>> JointInfluences = null;
+		/// <summary>
+		/// A list of faces in the mesh.
+		/// </summary>
 		public List<Face> Faces = null;
+		/// <summary>
+		/// The bind shape matrix for the mesh.
+		/// </summary>
 		public float[] BindShapeMatrix = null;
+		/// <summary>
+		/// The pelvis offset matrix for the mesh.
+		/// </summary>
 		public float[] PelvisOffsetMatrix = null;
+		/// <summary>
+		/// An array of joints in the mesh.
+		/// </summary>
 		public JointInfo[] Joints = null;
+		/// <summary>
+		/// Whether the mesh is skinned.
+		/// </summary>
 		public bool IsSkinned = false;
 
+		/// <summary>
+		/// Determines whether a mesh is rigged.
+		/// </summary>
+		/// <param name="prim">The primitive to check.</param>
+		/// <param name="meshAsset">The mesh asset to check.</param>
+		/// <param name="LOD">The level of detail to check.</param>
+		/// <returns>True if the mesh is rigged, false otherwise.</returns>
 		public static bool IsRiggedMesh(Primitive prim, AssetMesh meshAsset, DetailLevel LOD)
 		{
 			try

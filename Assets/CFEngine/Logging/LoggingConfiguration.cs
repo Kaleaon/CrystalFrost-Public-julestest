@@ -4,6 +4,9 @@ using CrystalFrost.Config;
 using Microsoft.Extensions.Options;
 namespace CrystalFrost.Logging
 {
+    /// <summary>
+    /// Provides the logging configuration.
+    /// </summary>
     public static class LoggingConfiguration
     {
         /* COMMENTED OUT COMMENT: Code below is from the original LoggingConfiguration.cs file.

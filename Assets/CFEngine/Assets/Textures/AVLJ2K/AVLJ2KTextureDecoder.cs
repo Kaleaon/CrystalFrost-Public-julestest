@@ -8,6 +8,9 @@ using System.Threading.Tasks;
 
 namespace CrystalFrost.Assets.Textures.AVLJ2K
 {
+	/// <summary>
+	/// A texture decoder that uses the avl_j2k library.
+	/// </summary>
 	public class AVLJ2KTextureDecoder : ITextureDecoder
 	{
 		[DllImport("avl_j2k")]
@@ -26,6 +29,11 @@ namespace CrystalFrost.Assets.Textures.AVLJ2K
 		private readonly ILogger<AVLJ2KTextureDecoder> _log;
 		private readonly ITgaReader _tgaReader;
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="AVLJ2KTextureDecoder"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
+		/// <param name="tgaReader">A TGA reader.</param>
 		public AVLJ2KTextureDecoder(
 			ILogger<AVLJ2KTextureDecoder> log,
 			ITgaReader tgaReader)
@@ -34,6 +42,7 @@ namespace CrystalFrost.Assets.Textures.AVLJ2K
 			_tgaReader = tgaReader;
 		}
 
+		/// <inheritdoc/>
 		public Task<DecodedTexture> Decode(AssetTexture texture)
 		{
 			return Perf.Measure("AVLJ2KTextureDecoder.Decode",

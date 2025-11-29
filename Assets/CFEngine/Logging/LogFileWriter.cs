@@ -9,11 +9,23 @@ using System.Threading.Tasks;
 
 namespace CrystalFrost.Logging
 {
+	/// <summary>
+	/// Defines the interface for a log file writer.
+	/// </summary>
 	public interface ILogFileWriter
 	{
+		/// <summary>
+		/// Enqueues a log message to be written to the file.
+		/// </summary>
+		/// <param name="eventId">The event ID.</param>
+		/// <param name="level">The log level.</param>
+		/// <param name="message">The message to write.</param>
 		void Enqeue(int eventId, LogLevel level, string message);
 	}
 
+	/// <summary>
+	/// Writes log messages to a file.
+	/// </summary>
 	public class LogFileWriter : ILogFileWriter
 	{
 		private readonly string _filename;
@@ -32,6 +44,9 @@ namespace CrystalFrost.Logging
 
 		private readonly ConcurrentQueue<Entry> _entries = new();
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="LogFileWriter"/> class.
+		/// </summary>
 		public LogFileWriter()
 		{
 			var logDir = Path.Combine(UnityEngine.Application.persistentDataPath, "logs");
@@ -84,6 +99,7 @@ namespace CrystalFrost.Logging
 			};
 		}
 
+		/// <inheritdoc/>
 		public void Enqeue(int eventId, LogLevel level, string message)
 		{
 			_entries.Enqueue(new Entry

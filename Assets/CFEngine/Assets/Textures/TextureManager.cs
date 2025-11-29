@@ -18,11 +18,15 @@ namespace CrystalFrost.Assets
 		IReadyTextureQueue ReadyTextures { get; }
 	}
 
+	/// <summary>
+	/// Manages textures.
+	/// </summary>
 	public class TextureManager : ITextureManager, IDisposable
 	{
 		private readonly ILogger<TextureManager> _log;
 		private readonly ITextureRequestQueue _textureRequests;
 
+		/// <inheritdoc/>
 		public IReadyTextureQueue ReadyTextures { get; }
 
 		private readonly ITextureDecodeWorker _decodeWorker;
@@ -32,6 +36,15 @@ namespace CrystalFrost.Assets
 
 		private readonly List<UUID> _pending = new();
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="TextureManager"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
+		/// <param name="readyTextureQueue">A queue of ready textures.</param>
+		/// <param name="textureRequests">A queue of texture requests.</param>
+		/// <param name="decodeWorker">The worker that decodes textures.</param>
+		/// <param name="downloadWorker">The worker that downloads textures.</param>
+		/// <param name="textureCache">The texture cache.</param>
 		public TextureManager(
 			ILogger<TextureManager> log,
 			IReadyTextureQueue readyTextureQueue,
@@ -63,12 +76,14 @@ namespace CrystalFrost.Assets
 			_log.PendingTextureRemoved(decoded.UUID);
 		}
 
+		/// <inheritdoc/>
 		public void RequestImage(UUID uuid)
 		{
 			_log.TextureRequested(uuid);
 			_textureRequests.Enqueue(uuid);
 		}
 
+		/// <inheritdoc/>
 		public void Dispose()
 		{
 			_decodeWorker.Dispose();

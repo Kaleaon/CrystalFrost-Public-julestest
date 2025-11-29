@@ -22,13 +22,21 @@ namespace CrystalFrost
         public void SignalShutdown();
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Provides a signal that a shutdown has started.
+    /// </summary>
     public class ProvideShutdownSignal : IProvideShutdownSignal
     {
         private readonly ILogger<ProvideShutdownSignal> _log;
         private readonly IUnityEditorEvents _editorEvents;
+        /// <inheritdoc/>
         public event Action OnShutdown;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ProvideShutdownSignal"/> class.
+        /// </summary>
+        /// <param name="log">A logger for logging messages.</param>
+        /// <param name="unityMode">The Unity editor events provider.</param>
         public ProvideShutdownSignal(ILogger<ProvideShutdownSignal> log,
             IUnityEditorEvents unityMode)
         {
@@ -46,12 +54,14 @@ namespace CrystalFrost
             SignalShutdown();
         }
 
+        /// <inheritdoc/>
         public void SignalShutdown()
         {
             _log.ShutdownSignalSet();
             OnShutdown?.Invoke();
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
             _editorEvents.BeforeAssemblyReload -= BeforeEditorAssemblyReload;

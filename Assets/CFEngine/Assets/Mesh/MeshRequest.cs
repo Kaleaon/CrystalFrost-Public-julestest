@@ -4,6 +4,9 @@ using UnityEngine;
 
 namespace CrystalFrost.Assets.Mesh
 {
+    /// <summary>
+    /// Represents a request for a mesh.
+    /// </summary>
     public class MeshRequest
     {
         /// <summary>

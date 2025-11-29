@@ -7,6 +7,9 @@ using UnityEditor;
 #endif
 
 #if UNITY_EDITOR
+/// <summary>
+/// The editor for the VariableJoystick.
+/// </summary>
 [CustomEditor(typeof(VariableJoystick))]
 public class VariableJoystickEditor : JoystickEditor
 {
@@ -20,6 +23,7 @@ public class VariableJoystickEditor : JoystickEditor
         joystickType = serializedObject.FindProperty("joystickType");
     }
 
+    /// <inheritdoc/>
     public override void OnInspectorGUI()
     {
         base.OnInspectorGUI();

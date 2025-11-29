@@ -8,13 +8,14 @@ namespace CrystalFrost.Assets.Animation
 	/// </summary>
 	public interface IDecodedAnimationQueue : IConcurrentQueue<AnimationRequest> { }
 
+	/// <inheritdoc/>
 	public class DecodedAnimationQueue : AbstractedConcurrentQueue<AnimationRequest>, IDecodedAnimationQueue { }
 
 	/// <summary>
 	/// A queue for Animations that have been download but not cached.
 	/// </summary>
 	public interface IDownloadedAnimationCacheQueue : IConcurrentQueue<AnimationRequest> { }
-
+	/// <inheritdoc/>
 	public class DownloadedAnimationCacheQueue : AbstractedConcurrentQueue<AnimationRequest>, IDownloadedAnimationCacheQueue { }
 
 
@@ -22,21 +23,21 @@ namespace CrystalFrost.Assets.Animation
 	/// A queue for Animations that have been dowloaded, but have not been converted.
 	/// </summary>
 	public interface IDownloadedAnimationQueue : IConcurrentQueue<AnimationRequest> { }
-
+	/// <inheritdoc/>
 	public class DownloadedAnimationQueue : AbstractedConcurrentQueue<AnimationRequest>, IDownloadedAnimationQueue { }
 
 	/// <summary>
 	/// A queue for Animations that have not been downloaded.
 	/// </summary>
 	public interface IAnimationDownloadRequestQueue : IConcurrentQueue<AnimationRequest> { }
-
+	/// <inheritdoc/>
 	public class AnimationDownloadRequestQueue : AbstractedConcurrentQueue<AnimationRequest>, IAnimationDownloadRequestQueue { }
 
 	/// <summary>
 	/// A queue for Animations that have been requested (from cache or downloads)
 	/// </summary>
 	public interface IAnimationRequestQueue : IConcurrentQueue<AnimationRequest> { }
-
+	/// <inheritdoc/>
 	public class AnimationRequestQueue : AbstractedConcurrentQueue<AnimationRequest>, IAnimationRequestQueue { }
 
 }

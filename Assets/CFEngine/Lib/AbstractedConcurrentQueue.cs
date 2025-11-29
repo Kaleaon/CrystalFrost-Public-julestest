@@ -39,14 +39,18 @@ namespace CrystalFrost.Lib
 
     }
 
+    /// <inheritdoc/>
     public class AbstractedConcurrentQueue<T> : IConcurrentQueue<T>
     {
         private readonly ConcurrentQueue<T> _queue = new();
 		// private readonly ConcurrentStack<T> _stack = new();
 
+        /// <inheritdoc/>
         public event Action<T> ItemEnqueued;
+        /// <inheritdoc/>
         public event Action<T> ItemDequeued;
 
+        /// <inheritdoc/>
         public void Enqueue(T item)
         {
             _queue.Enqueue(item);
@@ -54,6 +58,7 @@ namespace CrystalFrost.Lib
             ItemEnqueued?.Invoke(item);
         }
 
+        /// <inheritdoc/>
         public bool TryDequeue(out T item)
         {
             var result = _queue.TryDequeue(out item);
@@ -65,6 +70,7 @@ namespace CrystalFrost.Lib
             return result;
         }
 
+        /// <inheritdoc/>
 		public int Count { get { return _queue.Count; } }
 		// public int Count { get { return _stack.Count; } }
     }

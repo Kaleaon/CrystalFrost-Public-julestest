@@ -3,26 +3,53 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
+/// <summary>
+/// A base class for joysticks.
+/// </summary>
 public class Joystick : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
 {
+    /// <summary>
+    /// The horizontal value of the joystick.
+    /// </summary>
     public float Horizontal { get { return (snapX) ? SnapFloat(input.x, AxisOptions.Horizontal) : input.x; } }
+    /// <summary>
+    /// The vertical value of the joystick.
+    /// </summary>
     public float Vertical { get { return (snapY) ? SnapFloat(input.y, AxisOptions.Vertical) : input.y; } }
+    /// <summary>
+    /// The direction of the joystick.
+    /// </summary>
     public Vector2 Direction { get { return new Vector2(Horizontal, Vertical); } }
 
+    /// <summary>
+    /// The range of the joystick's handle.
+    /// </summary>
     public float HandleRange
     {
         get { return handleRange; }
         set { handleRange = Mathf.Abs(value); }
     }
 
+    /// <summary>
+    /// The dead zone of the joystick.
+    /// </summary>
     public float DeadZone
     {
         get { return deadZone; }
         set { deadZone = Mathf.Abs(value); }
     }
 
+    /// <summary>
+    /// The axis options for the joystick.
+    /// </summary>
     public AxisOptions AxisOptions { get { return AxisOptions; } set { axisOptions = value; } }
+    /// <summary>
+    /// Whether to snap the joystick's horizontal axis.
+    /// </summary>
     public bool SnapX { get { return snapX; } set { snapX = value; } }
+    /// <summary>
+    /// Whether to snap the joystick's vertical axis.
+    /// </summary>
     public bool SnapY { get { return snapY; } set { snapY = value; } }
 
     [SerializeField] private float handleRange = 1;
@@ -57,11 +84,13 @@ public class Joystick : MonoBehaviour, IPointerDownHandler, IDragHandler, IPoint
         handle.anchoredPosition = Vector2.zero;
     }
 
+    /// <inheritdoc/>
     public virtual void OnPointerDown(PointerEventData eventData)
     {
         OnDrag(eventData);
     }
 
+    /// <inheritdoc/>
     public void OnDrag(PointerEventData eventData)
     {
         cam = null;
@@ -129,6 +158,7 @@ public class Joystick : MonoBehaviour, IPointerDownHandler, IDragHandler, IPoint
         return 0;
     }
 
+    /// <inheritdoc/>
     public virtual void OnPointerUp(PointerEventData eventData)
     {
         input = Vector2.zero;

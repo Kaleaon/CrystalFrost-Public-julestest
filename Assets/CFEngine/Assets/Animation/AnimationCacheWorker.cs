@@ -11,8 +11,13 @@ using CrystalFrost.Assets.Textures;
 
 namespace CrystalFrost.Assets.Animation
 {
+	/// <summary>
+	/// Defines the interface for a worker that caches animations.
+	/// </summary>
 	public interface IAnimationCacheWorker : IDisposable { }
-
+	/// <summary>
+	/// A background worker that caches animations.
+	/// </summary>
 	public class AnimationCacheWorker : BackgroundWorker, IAnimationCacheWorker
 	{
 		private readonly AnimationConfig _animationConfig;
@@ -24,7 +29,17 @@ namespace CrystalFrost.Assets.Animation
 		private bool _isCachingAllowed;
 		private string _cachePath;
 
-
+		/// <summary>
+		/// Initializes a new instance of the <see cref="AnimationCacheWorker"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
+		/// <param name="runningIndicator">A signal that indicates that the application is shutting down.</param>
+		/// <param name="aesAnimationEncryptor">An encryptor for encrypting and decrypting animations.</param>
+		/// <param name="downloaded">A queue of downloaded animations.</param>
+		/// <param name="downloadRequestQueue">A queue of animations to be downloaded.</param>
+		/// <param name="animationRequestQueue">A queue of animations to be processed.</param>
+		/// <param name="downloadedCache">A queue of downloaded animations to be cached.</param>
+		/// <param name="animationConfig">The configuration for animations.</param>
 		public AnimationCacheWorker(
 			ILogger<IAnimationCacheWorker> log,
 			IProvideShutdownSignal runningIndicator,

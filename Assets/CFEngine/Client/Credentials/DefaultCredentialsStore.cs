@@ -14,12 +14,14 @@ namespace CrystalFrost.Client.Credentials
     /// </summary>
     public class DefaultCredentialsStore : List<LoginCredential>, IDefaultCredentialsStore
     {
+        /// <inheritdoc/>
         public void Load()
         {
             // nothing was peristed, so nothing can be loaded.
             Clear();
         }
 
+        /// <inheritdoc/>
         public void Save()
         {
             // Do not persist.

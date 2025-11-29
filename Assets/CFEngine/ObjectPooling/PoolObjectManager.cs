@@ -7,6 +7,9 @@ namespace CrystalFrost.ObjectPooling
 
     public partial class ObjectPool 
     {
+        /// <summary>
+        /// Manages a pooled object.
+        /// </summary>
         public class PoolObjectManager : MonoBehaviour
         {
             private Type[] requiredComponents = null;
@@ -15,16 +18,37 @@ namespace CrystalFrost.ObjectPooling
             private bool isActivated = false;
             private float updationTime = 0f;
             private string uid = null;
+            /// <summary>
+            /// The time the object was created.
+            /// </summary>
             public float CreationTime => updationTime;
+            /// <summary>
+            /// Whether the object is activated.
+            /// </summary>
             public bool IsActivated => isActivated;
+            /// <summary>
+            /// The age of the object.
+            /// </summary>
             public float Age => Time.time - updationTime; // returns age of object alive when its alive or age of object dead when its dead
 
+            /// <summary>
+            /// The unique ID of the object.
+            /// </summary>
             public string UID { get => uid; set => uid = value;}
+            /// <summary>
+            /// The required components for the object.
+            /// </summary>
             public Type[] RequiredComponents { set => requiredComponents = value; }
+            /// <summary>
+            /// The object pool that this object belongs to.
+            /// </summary>
             public ObjectPool Pool { set => pool = value; }
             private bool requiresDeallocationCall = false;
 
-            // Activate the object and assign deallocation logic
+            /// <summary>
+            /// Allocates the object and assigns deallocation logic.
+            /// </summary>
+            /// <param name="deallocationLogic">The deallocation logic to use.</param>
             public void AllocateSelf(IPoolObjectDeallocationLogic deallocationLogic)
             {
                 // set the object to active
@@ -36,7 +60,9 @@ namespace CrystalFrost.ObjectPooling
                 this.deallocationLogic = deallocationLogic;
             }
 
-            // Update the object, checking if it requires deallocation
+            /// <summary>
+            /// Updates the object, checking if it requires deallocation.
+            /// </summary>
             public void UpdateObject()
             {
                 if (isActivated && deallocationLogic != null && deallocationLogic.RequiresDeallocation())
@@ -54,13 +80,18 @@ namespace CrystalFrost.ObjectPooling
                 }
             }
 
-            // Set the deallocation logic for the object
+            /// <summary>
+            /// Sets the deallocation logic for the object.
+            /// </summary>
+            /// <param name="deallocationLogic">The deallocation logic to use.</param>
             public void SetDeallocationLogic(IPoolObjectDeallocationLogic deallocationLogic)
             {
                 this.deallocationLogic = deallocationLogic;
             }
 
-            // Deactivate the object and perform cleanup
+            /// <summary>
+            /// Deallocates the object and performs cleanup.
+            /// </summary>
             public void DeallocateSelf()
             {
                 isActivated = false;

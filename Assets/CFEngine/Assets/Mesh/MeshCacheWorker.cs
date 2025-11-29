@@ -15,8 +15,14 @@ using System.Runtime.CompilerServices;
 
 namespace CrystalFrost.Assets.Mesh
 {
+	/// <summary>
+	/// Defines the interface for a worker that caches meshes.
+	/// </summary>
 	public interface IMeshCacheWorker : IDisposable { }
 
+	/// <summary>
+	/// A background worker that caches meshes.
+	/// </summary>
 	public class MeshCacheWorker : BackgroundWorker, IMeshCacheWorker
 	{
 		private readonly MeshConfig _meshConfig;
@@ -28,6 +34,17 @@ namespace CrystalFrost.Assets.Mesh
 		private bool _isCachingAllowed;
 		private string _cachePath;
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="MeshCacheWorker"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
+		/// <param name="runningIndicator">A signal that indicates that the application is shutting down.</param>
+		/// <param name="aesMeshEncryptor">An encryptor for encrypting and decrypting meshes.</param>
+		/// <param name="downloaded">A queue of downloaded meshes.</param>
+		/// <param name="downloadRequestQueue">A queue of meshes to be downloaded.</param>
+		/// <param name="meshRequestQueue">A queue of meshes to be processed.</param>
+		/// <param name="downloadedCache">A queue of downloaded meshes to be cached.</param>
+		/// <param name="meshConfig">The configuration for meshes.</param>
 		public MeshCacheWorker(
 			ILogger<IMeshCacheWorker> log,
 			IProvideShutdownSignal runningIndicator,

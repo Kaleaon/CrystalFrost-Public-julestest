@@ -22,6 +22,10 @@ namespace CrystalFrost
     {
         private readonly ILogger _log;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="GridClientFactory"/> class.
+        /// </summary>
+        /// <param name="log">A logger for logging messages.</param>
         public GridClientFactory(ILogger<GridClientFactory> log)
         {
             _log = log;
@@ -30,7 +34,7 @@ namespace CrystalFrost
         /// <summary>
         /// Create a grid client and configure it as needed.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>A configured <see cref="GridClient"/> instance.</returns>
         public GridClient BuildGridClient()
         {
             var client = new GridClient();

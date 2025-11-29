@@ -26,6 +26,9 @@ namespace CrystalFrost.WorldState
 		SimObject AddOrUpdate(uint localID, Func<SimObject> buildNew, Func<SimObject, SimObject> update);
 	}
 
+	/// <summary>
+	/// A collection of all simulation objects.
+	/// </summary>
 	public class AllSimObjects : IAllSimObject
 	{
 		private readonly Dictionary<uint, List<SimObject>> _orphans = new();
@@ -35,6 +38,11 @@ namespace CrystalFrost.WorldState
 		private readonly ILogger<AllSimObjects> _log;
 		private readonly INewSimObjectQueue _newSimObjectQueue;
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="AllSimObjects"/> class.
+		/// </summary>
+		/// <param name="log">A logger for logging messages.</param>
+		/// <param name="newSimObjectQueue">A queue for new simulation objects.</param>
 		public AllSimObjects(ILogger<AllSimObjects> log,
 			INewSimObjectQueue newSimObjectQueue)
 		{
@@ -42,12 +50,14 @@ namespace CrystalFrost.WorldState
 			_newSimObjectQueue = newSimObjectQueue;
 		}
 
+		/// <inheritdoc/>
 		public SimObject GetOrDefault(uint localID)
 		{
 			if (_objects.TryGetValue(localID, out var result)) { return result; }
 			return default;
 		}
 
+		/// <inheritdoc/>
 		public SimObject AddOrUpdate(uint localID, Func<SimObject> buildNew, Func<SimObject, SimObject> update)
 		{
 			var result = _objects.AddOrUpdate(

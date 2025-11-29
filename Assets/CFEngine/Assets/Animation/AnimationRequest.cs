@@ -5,6 +5,9 @@ using UnityEngine;
 
 namespace CrystalFrost.Assets.Animation
 {
+	/// <summary>
+	/// Represents a request for an animation.
+	/// </summary>
 	public class AnimationRequest
 	{
 

@@ -13,13 +13,27 @@ namespace CrystalFrost.ObjectPooling
     }
 
     // Define an interface for object pooling service
+    /// <summary>
+    /// Defines the interface for an object pooling service.
+    /// </summary>
     public interface IObjectPoolingService
     {
+        /// <summary>
+        /// Initializes the object pooling service.
+        /// </summary>
         public void Initialize();
+        /// <summary>
+        /// Acquires an object from the specified pool.
+        /// </summary>
+        /// <param name="poolName">The name of the pool to acquire the object from.</param>
+        /// <param name="deallocationLogic">The deallocation logic for the object.</param>
+        /// <returns>The acquired object.</returns>
         public GameObject AcquireObject(ObjectPoolName poolName, IPoolObjectDeallocationLogic deallocationLogic);
     }
 
-    // Implementation of the object pooling service
+    /// <summary>
+    /// Provides an object pooling service.
+    /// </summary>
     public class ObjectPoolingService : IObjectPoolingService
     {
         // Create a dictionary to hold object pools for different object types.
@@ -37,7 +51,7 @@ namespace CrystalFrost.ObjectPooling
         // Interval (in seconds) for updating object pools in the worker thread
         private float poolObjectManagerThreadInterval = 5.0f;
 
-        // Initialize default object pools
+        /// <inheritdoc/>
         public void Initialize()
         {
             this.globalObjectPool = new GameObject();
@@ -79,7 +93,7 @@ namespace CrystalFrost.ObjectPooling
             }
         }
 
-        // Acquire an object from a specific object pool with deallocation logic
+        /// <inheritdoc/>
         public GameObject AcquireObject(ObjectPoolName poolName, IPoolObjectDeallocationLogic deallocationLogic)
         {
             if (objectPools.ContainsKey(poolName))
@@ -92,7 +106,11 @@ namespace CrystalFrost.ObjectPooling
             }
         }
 
-        // Deallocate an object by its pool name and GameObject reference
+        /// <summary>
+        /// Deallocates an object to the specified pool.
+        /// </summary>
+        /// <param name="poolName">The name of the pool to deallocate the object to.</param>
+        /// <param name="gameObject">The object to deallocate.</param>
         public void DeallocateObject(ObjectPoolName poolName, GameObject gameObject)
         {
             if (objectPools.ContainsKey(poolName))

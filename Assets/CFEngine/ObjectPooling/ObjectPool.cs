@@ -16,6 +16,12 @@ namespace CrystalFrost.ObjectPooling
         private float maxAge = 600f;
 
         // Constructor to initialize the ObjectPool
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ObjectPool"/> class.
+        /// </summary>
+        /// <param name="requiredComponents">The components that objects in the pool must have.</param>
+        /// <param name="initialSize">The initial size of the pool.</param>
+        /// <param name="poolParentObject">The parent object for all pooled objects.</param>
         public ObjectPool(Type[] requiredComponents, int initialSize, GameObject poolParentObject)
         {
             this.requiredComponents = requiredComponents;
@@ -28,7 +34,11 @@ namespace CrystalFrost.ObjectPooling
             }
         }
 
-        // Acquire an object from the pool with optional deallocation logic
+        /// <summary>
+        /// Acquires an object from the pool.
+        /// </summary>
+        /// <param name="deallocationLogic">The deallocation logic for the object.</param>
+        /// <returns>The acquired object.</returns>
         public GameObject AcquireObject(IPoolObjectDeallocationLogic deallocationLogic)
         {
             (GameObject obj, PoolObjectManager manager) = (null, null);
@@ -103,7 +113,10 @@ namespace CrystalFrost.ObjectPooling
             return (obj, manager);
         }
 
-        // Deallocate an object by UID
+        /// <summary>
+        /// Deallocates an object from the pool by its UID.
+        /// </summary>
+        /// <param name="uid">The UID of the object to deallocate.</param>
         public void DeallocateObject(string uid)
         {            
             (GameObject obj, PoolObjectManager manager) = objectsInUse[uid];
@@ -118,7 +131,10 @@ namespace CrystalFrost.ObjectPooling
             objectsInQueue.Enqueue((obj, manager));
         }
 
-        // Deallocate an object by GameObject reference
+        /// <summary>
+        /// Deallocates an object from the pool by its GameObject reference.
+        /// </summary>
+        /// <param name="obj">The GameObject to deallocate.</param>
         public void DeallocateObject(GameObject obj)
         {
             var manager = obj.GetComponent<PoolObjectManager>();
@@ -131,6 +147,9 @@ namespace CrystalFrost.ObjectPooling
             this.DeallocateObject(manager.UID);
         }
 
+        /// <summary>
+        /// Updates the pooled objects on the main thread.
+        /// </summary>
         public void UpdatePoolObjectsOnMainThread()
         {
             // go through all objects in deletion queue and Destroy them
@@ -148,7 +167,9 @@ namespace CrystalFrost.ObjectPooling
             // }   
         }
 
-        // Update pooled objects
+        /// <summary>
+        /// Updates the pooled objects.
+        /// </summary>
         public void UpdatePoolObjects()
         {
             foreach (var pair in objectsInUse)
@@ -171,7 +192,9 @@ namespace CrystalFrost.ObjectPooling
             }
         }
 
-        // Update the pool size by removing objects that exceed a specified age limit
+        /// <summary>
+        /// Updates the size of the pool by removing objects that have exceeded their maximum age.
+        /// </summary>
         public void UpdatePoolSize()
         {
             while (objectsInQueue.Count > 0)

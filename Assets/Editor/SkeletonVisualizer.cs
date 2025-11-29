@@ -3,6 +3,9 @@ using System.Collections;
 using UnityEditor;
 using Unity.VisualScripting;
 
+/// <summary>
+/// An editor window for visualizing a skeleton by drawing lines between parent and child transforms.
+/// </summary>
 [CustomEditor(typeof(Transform))]
 public class SkeletonVisualizer : EditorWindow
 {
@@ -12,6 +15,9 @@ public class SkeletonVisualizer : EditorWindow
 	private GameObject selectedObject;
 
 	// Add menu named "Draw Lines From Children" to the Window menu
+	/// <summary>
+	/// Shows the Skeleton Visualizer window.
+	/// </summary>
 	[MenuItem("Tools/Skeleton Visualizer")]
 	public static void Init()
 	{

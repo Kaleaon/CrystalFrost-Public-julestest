@@ -62,40 +62,6 @@ public abstract class SimTerrain : ISimTerrain
 
     public abstract void TerrainUpdate(SimulatorContainer pSimContainer);
 
-    // Handle an edit terrain height message from the simulator.
-	public void EditTerrainHeight(uint handle, int absX, int absY, float[,] heightData)
-	{
-        // DEPRECATED: This code is part of the legacy terrain system and has been superseded by
-        // SimTerrainHeightMap and its TerrainPatchUpdate/TerrainUpdate mechanisms.
-        // It is left here for reference but is not currently used by the simulator manager.
-        
-        // TODO: OLD code that needs to be updated.
-        /*
-		if (!terrainDictionary.ContainsKey(handle))
-		{
-			Debug.LogWarning($"Handle {handle} not found in the terrain dictionary.");
-			return;
-		}
-
-		int terrainX = (int)(absX * 0.00390625f);
-		int terrainY = (int)(absY * 0.00390625f);
-		int localX = absX & 255;
-		int localY = absY & 255;
-
-		Terrain[,] terrains = terrainDictionary[handle];
-		Terrain terrain = terrains[terrainX, terrainY];
-		TerrainData terrainData = terrain.terrainData;
-
-		terrainData.SetHeights(localX, localY, heightData);
-
-		// Check edges and sync accordingly
-		if (localX == 0 || localY == 0 || localX + 16 == 256 || localY + 16 == 256)
-		{
-			CloneEdgeHeight(terrain);
-			SyncMainEdgeHeight(terrain);
-		}
-        */
-	}
 
     /*
 	public ulong GetNorth(ulong handle) => (handle & 0xFFFFFFFF00000000) | ((uint)handle + 256);
@@ -179,56 +145,6 @@ public abstract class SimTerrain : ISimTerrain
 	}
     */
 
-	private void CloneEdgeHeight(Terrain mainTerrain)
-	{
-		int resolution = mainTerrain.terrainData.heightmapResolution;
-		float[,] heights = mainTerrain.terrainData.GetHeights(0, 0, resolution, resolution);
-
-		// Copy the right-1 column to the right edge
-		for (int y = 0; y < resolution; y++)
-		{
-			heights[y, resolution - 1] = heights[y, resolution - 2];
-		}
-
-		// Copy the top-1 row to the top edge
-		for (int x = 0; x < resolution; x++)
-		{
-			heights[resolution - 1, x] = heights[resolution - 2, x];
-		}
-
-		mainTerrain.terrainData.SetHeights(0, 0, heights);
-	}
-
-	private void SyncMainEdgeHeight(Terrain mainTerrain)
-	{
-		int resolution = mainTerrain.terrainData.heightmapResolution;
-		float[,] mainHeights = mainTerrain.terrainData.GetHeights(0, 0, resolution, resolution);
-
-		// Sync with bottom neighbor
-		Terrain bottomNeighbor = mainTerrain.bottomNeighbor;
-		if (bottomNeighbor != null)
-		{
-			float[,] neighborHeights = bottomNeighbor.terrainData.GetHeights(0, 0, resolution, resolution);
-			for (int x = 0; x < resolution; x++)
-			{
-				mainHeights[0, x] = neighborHeights[resolution - 1, x]; // Bottom edge of main conforming to top edge of neighbor
-			}
-		}
-
-		// Sync with left neighbor
-		Terrain leftNeighbor = mainTerrain.leftNeighbor;
-		if (leftNeighbor != null)
-		{
-			float[,] neighborHeights = leftNeighbor.terrainData.GetHeights(0, 0, resolution, resolution);
-			for (int y = 0; y < resolution; y++)
-			{
-				mainHeights[y, 0] = neighborHeights[y, resolution - 1]; // Left edge of main conforming to right edge of neighbor
-			}
-		}
-
-		mainTerrain.terrainData.SetHeights(0, 0, mainHeights);
-		mainTerrain.terrainData.SyncHeightmap();
-	}
 
 	public float QuadLerp(float v00, float v01, float v10, float v11, float xPercent, float yPercent)
 	{

@@ -238,18 +238,16 @@ namespace OpenMetaverse.Rendering
 				{
 					default:
 					case DetailLevel.Highest:
+					case DetailLevel.High:
 						facesOSD = MeshData["high_lod"];
 						break;
 
-					case DetailLevel.High:
+					case DetailLevel.Medium:
 						facesOSD = MeshData["medium_lod"];
 						break;
 
-					case DetailLevel.Medium:
-						facesOSD = MeshData["low_lod"];
-						break;
-
 					case DetailLevel.Low:
+					case DetailLevel.Lowest:
 						facesOSD = MeshData["lowest_lod"];
 						break;
 				}

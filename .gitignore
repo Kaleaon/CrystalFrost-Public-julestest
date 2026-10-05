@@ -83,3 +83,19 @@ crashlytics-build.properties
 *.drawio.dtmp
 CrystalFrost Patreon Source Snapshot 7202023.7z
 CrystalFrost Patreon Build 4 Source Snapshot.7z
+-e 
+# Environment files
+*.env
+*.env.*
+-e 
+# Environment files
+*.env
+*.env.*
+-e 
+# Environment files
+*.env
+*.env.*
+-e 
+# Environment files
+*.env
+*.env.*

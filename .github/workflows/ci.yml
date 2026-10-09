@@ -34,7 +34,7 @@ jobs:
           lfs: true
 
       - name: Cache Unity Library
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: Library
           key: Library-${{ matrix.testMode }}-${{ hashFiles('Packages/manifest.json', 'Packages/packages-lock.json') }}
@@ -43,7 +43,7 @@ jobs:
             Library-
 
       - name: Run Unity Tests
-        uses: game-ci/unity-test-runner@v3
+        uses: game-ci/unity-test-runner@v4
         id: testRunner
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
@@ -57,7 +57,7 @@ jobs:
           checkName: ${{ matrix.testMode }} Test Results
 
       - name: Upload Test Results Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Test-Results-${{ matrix.testMode }}
@@ -84,7 +84,7 @@ jobs:
           lfs: true
 
       - name: Cache Unity Library
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: Library
           key: Library-StandaloneWindows64-${{ hashFiles('Packages/manifest.json', 'Packages/packages-lock.json') }}
@@ -93,7 +93,7 @@ jobs:
             Library-
 
       - name: Build Standalone Windows 64
-        uses: game-ci/unity-builder@v3
+        uses: game-ci/unity-builder@v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
@@ -104,7 +104,7 @@ jobs:
           buildName: CrystalFrost
 
       - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: StandaloneWindows64-Build

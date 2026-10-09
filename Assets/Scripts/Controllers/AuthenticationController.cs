@@ -6,6 +6,7 @@ using CrystalFrost;
 using CrystalFrost.Scripts;
 using CrystalFrost.Client.Credentials;
 using CrystalFrost.Config;
+using CrystalFrost.Exceptions;
 using CrystalFrost.Services;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +22,7 @@ namespace CrystalFrost.Controllers
         private ICredentialsStore _credentials;
         private ILoginUriProvider _loginUriProvider;
         private IClientManagerService _clientManagerService;
+        private IUserFriendlyExceptionMapper _exceptionMapper;
         private LoginCredential _currentCredential;
 
         public System.Action OnLoginSuccess;
@@ -32,6 +34,7 @@ namespace CrystalFrost.Controllers
             _logger = Services.GetService<ILogger<AuthenticationController>>();
             _loginUriProvider = Services.GetService<ILoginUriProvider>();
             _credentials = Services.GetService<ICredentialsStore>();
+            _exceptionMapper = Services.GetService<IUserFriendlyExceptionMapper>() ?? new UserFriendlyExceptionMapper();
             _clientManagerService = ClientManager.GetService(); // Use service instead of static access
         }
 
@@ -116,14 +119,16 @@ namespace CrystalFrost.Controllers
                 {
                     Console.WriteLine(System.DateTime.UtcNow.ToShortTimeString() + ": " + _clientManagerService.Client.Network.LoginMessage);
                     _logger.LogError($"Login failed: {_clientManagerService.Client.Network.LoginMessage}");
-                    OnStatusUpdate?.Invoke($"Login failed: {_clientManagerService.Client.Network.LoginMessage}");
+                    var userMsg = _exceptionMapper.Map(_clientManagerService.Client.Network.LoginMessage);
+                    OnStatusUpdate?.Invoke(userMsg.ToString());
                     _clientManagerService.Active = false;
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Exception during login");
-                OnStatusUpdate?.Invoke($"Login error: {ex.Message}");
+                var userMsg = _exceptionMapper.Map(ex);
+                OnStatusUpdate?.Invoke(userMsg.ToString());
                 _clientManagerService.Active = false;
             }
         }

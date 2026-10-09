@@ -5,6 +5,7 @@ using System.Threading;
 using UnityEngine;
 using OpenMetaverse;
 using Microsoft.Extensions.Logging;
+using CrystalFrost.Exceptions;
 using CrystalFrost.Services;
 
 namespace CrystalFrost.Assets
@@ -43,6 +44,9 @@ namespace CrystalFrost.Assets
         private readonly ILogger<MaterialManager> _logger;
         private readonly IClientManagerService _clientManagerService;
         private readonly TextureManager _textureManager;
+        private readonly IUserFriendlyExceptionMapper _exceptionMapper;
+
+        public event Action<UserFriendlyMessage> OnAssetError;
 
         // Thread-safe material container management
         private readonly ConcurrentDictionary<UUID, MaterialContainer> _materialContainers = new();
@@ -56,6 +60,7 @@ namespace CrystalFrost.Assets
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _clientManagerService = clientManagerService ?? throw new ArgumentNullException(nameof(clientManagerService));
             _textureManager = textureManager ?? throw new ArgumentNullException(nameof(textureManager));
+            _exceptionMapper = Services.GetService<IUserFriendlyExceptionMapper>() ?? new UserFriendlyExceptionMapper();
 
             InitializeDefaultMaterials();
         }
@@ -134,6 +139,8 @@ namespace CrystalFrost.Assets
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Failed to create material for texture {textureUuid}");
+                var userMsg = _exceptionMapper.Map(ex);
+                OnAssetError?.Invoke(userMsg);
                 return ZeroMaterial;
             }
             finally

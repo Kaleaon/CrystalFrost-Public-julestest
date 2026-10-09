@@ -4,6 +4,8 @@ using UnityEngine.TestTools;
 using System.Collections;
 using CrystalFrost;
 using CrystalFrost.Assets;
+using CrystalFrost.Exceptions;
+using CrystalFrost.Security;
 using Microsoft.Extensions.Logging;
 using OpenMetaverse;
 
@@ -343,6 +345,104 @@ namespace CrystalFrost.Tests
                 $"Memory increase should be reasonable, increased by {memoryIncrease / 1024 / 1024}MB");
             
             logger.LogInformation($"Garbage collection test passed: {memoryIncrease / 1024 / 1024}MB increase for {numRequests} requests");
+        }
+    }
+
+    /// <summary>
+    /// Test suite for Centralized Error Mapping and TLS Policy
+    /// </summary>
+    public class CentralizedErrorMappingTests
+    {
+        private IUserFriendlyExceptionMapper mapper;
+
+        [SetUp]
+        public void Setup()
+        {
+            mapper = new UserFriendlyExceptionMapper();
+        }
+
+        [Test]
+        public void UserFriendlyExceptionMapper_SocketException_ShouldReturnConversationalNetworkMessage()
+        {
+            var ex = new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.HostNotFound);
+            var result = mapper.Map(ex);
+
+            Assert.AreEqual("Connection Problem", result.Headline);
+            Assert.IsTrue(result.RecoveryStep.Contains("internet connection"), "Recovery step should offer connection guidance");
+            Assert.IsFalse(result.ToString().Contains("SocketException"), "User message must not contain raw exception class name");
+        }
+
+        [Test]
+        public void UserFriendlyExceptionMapper_XmlRpcException_ShouldReturnConversationalLoginMessage()
+        {
+            var result = mapper.Map("XmlRpcException: Network connection failed during authentication");
+
+            Assert.IsFalse(result.ToString().Contains("XmlRpcException"), "User message must not contain XmlRpcException jargon");
+            Assert.IsFalse(string.IsNullOrWhiteSpace(result.Headline));
+            Assert.IsFalse(string.IsNullOrWhiteSpace(result.RecoveryStep));
+        }
+
+        [Test]
+        public void UserFriendlyExceptionMapper_AssetException_ShouldReturnPlainAssetNotice()
+        {
+            var ex = new System.IO.InvalidDataException("Asset mesh decoding failed for UUID");
+            var result = mapper.Map(ex);
+
+            Assert.AreEqual("Content Loading Notice", result.Headline);
+            Assert.IsFalse(result.ToString().Contains("InvalidDataException"));
+        }
+
+        [Test]
+        public void TlsPolicy_UntrustedCertificate_WhenDisabled_ShouldBlockAndReturnSecurityGuidance()
+        {
+            var policy = new TlsPolicy { AllowUntrustedCertificates = false };
+            bool isValid = policy.ValidateServerCertificate(
+                "https://example.com",
+                null,
+                null,
+                System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors,
+                out var userMessage);
+
+            Assert.IsFalse(isValid, "Server certificate should be rejected when untrusted certificates are disabled");
+            Assert.AreEqual("Security Verification Failed", userMessage.Headline);
+            Assert.IsTrue(userMessage.RecoveryStep.Contains("certificate"), "Recovery guidance should mention security certificate");
+        }
+
+        [Test]
+        public void TlsPolicy_UntrustedCertificate_WhenEnabled_ShouldAllow()
+        {
+            var policy = new TlsPolicy { AllowUntrustedCertificates = true };
+            bool isValid = policy.ValidateServerCertificate(
+                "https://example.com",
+                null,
+                null,
+                System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors,
+                out var userMessage);
+
+            Assert.IsTrue(isValid, "Server certificate should be accepted when AllowUntrustedCertificates is true");
+        }
+
+        [Test]
+        public void UserFriendlyExceptionMapper_ZeroRawExceptionStringsInUserFacingMessages()
+        {
+            var exceptions = new System.Exception[]
+            {
+                new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.ConnectionReset),
+                new System.NullReferenceException("Object reference not set to an instance of an object"),
+                new System.Security.Authentication.AuthenticationException("TLS Handshake failed"),
+                new System.Net.WebException("The remote server returned an error: (404) Not Found.")
+            };
+
+            foreach (var ex in exceptions)
+            {
+                var msg = mapper.Map(ex);
+                string str = msg.ToString();
+
+                Assert.IsFalse(str.Contains("SocketException"), $"Message '{str}' contains SocketException");
+                Assert.IsFalse(str.Contains("NullReferenceException"), $"Message '{str}' contains NullReferenceException");
+                Assert.IsFalse(str.Contains("AuthenticationException"), $"Message '{str}' contains AuthenticationException");
+                Assert.IsFalse(str.Contains("WebException"), $"Message '{str}' contains WebException");
+            }
         }
     }
 }

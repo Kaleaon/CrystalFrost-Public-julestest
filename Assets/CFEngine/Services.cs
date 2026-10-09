@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using CrystalFrost.Assets;
 using CrystalFrost.Assets.CFEngine.WorldState;
 using CrystalFrost.Assets.Mesh;
@@ -9,6 +9,7 @@ using CrystalFrost.Assets.Textures.AVLJ2K;
 using CrystalFrost.Client.Credentials;
 using CrystalFrost.Config;
 using CrystalFrost.Exceptions;
+using CrystalFrost.Security;
 using CrystalFrost.Lib;
 using CrystalFrost.Logging;
 using CrystalFrost.Timing;
@@ -210,6 +211,8 @@ namespace CrystalFrost
 			_serviceCollection.AddSingleton<ITransformTexCoords, TransformTexCoordsForUnity>();
 
 			_serviceCollection.AddSingleton<IGlobalExceptionHandler, GlobalExceptionHandler>();
+			_serviceCollection.AddSingleton<IUserFriendlyExceptionMapper, UserFriendlyExceptionMapper>();
+			_serviceCollection.AddSingleton<ITlsPolicy, TlsPolicy>();
 
 			// world state stuff
 			_serviceCollection.AddSingleton<IHandleTerseUpdate, HandleTerseUpdate>();

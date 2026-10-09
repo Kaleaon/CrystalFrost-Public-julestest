@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using UnityEngine;
 using OpenMetaverse;
 using OpenMetaverse.Assets;
 using OpenMetaverse.Rendering;
 using CrystalFrost;
+using CrystalFrost.Exceptions;
 using Microsoft.Extensions.Logging;
 using CrystalFrost.Services;
 using CrystalFrost.Assets.Mesh;
@@ -43,6 +45,9 @@ namespace CrystalFrost.Assets
     {
         private readonly ILogger<MeshManager> _logger;
         private readonly IClientManagerService _clientManagerService;
+        private readonly IUserFriendlyExceptionMapper _exceptionMapper;
+
+        public event Action<UserFriendlyMessage> OnAssetError;
         
         // Mesh processing queue and cache
         private readonly ConcurrentQueue<MeshQueueItem> _meshQueue = new();
@@ -61,6 +66,7 @@ namespace CrystalFrost.Assets
             // Get required services
             _assetManager = Services.GetService<IAssetManager>();
             _transformTextureCoords = Services.GetService<ITransformTexCoords>();
+            _exceptionMapper = Services.GetService<IUserFriendlyExceptionMapper>() ?? new UserFriendlyExceptionMapper();
         }
 
         public void RequestMesh(GameObject gameObject, Primitive primitive, UUID meshUuid, GameObject meshHolder)
@@ -108,12 +114,16 @@ namespace CrystalFrost.Assets
                     else
                     {
                         _logger.LogWarning($"Failed to retrieve mesh asset {item.MeshUUID}");
+                        var userMsg = _exceptionMapper.Map($"Failed to retrieve mesh asset {item.MeshUUID}");
+                        OnAssetError?.Invoke(userMsg);
                     }
                 });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error processing mesh request for {item.MeshUUID}");
+                var userMsg = _exceptionMapper.Map(ex);
+                OnAssetError?.Invoke(userMsg);
             }
         }
 
@@ -130,6 +140,8 @@ namespace CrystalFrost.Assets
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Failed to process mesh asset {item.MeshUUID}");
+                var userMsg = _exceptionMapper.Map(ex);
+                OnAssetError?.Invoke(userMsg);
             }
         }
 
@@ -140,6 +152,8 @@ namespace CrystalFrost.Assets
                 if (!meshAsset.Decode())
                 {
                     _logger.LogWarning($"Failed to decode mesh asset {item.MeshUUID}");
+                    var userMsg = _exceptionMapper.Map($"Failed to decode mesh asset {item.MeshUUID}");
+                    OnAssetError?.Invoke(userMsg);
                     return;
                 }
 
@@ -160,6 +174,8 @@ namespace CrystalFrost.Assets
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error processing mesh {item.MeshUUID} on main thread");
+                var userMsg = _exceptionMapper.Map(ex);
+                OnAssetError?.Invoke(userMsg);
             }
         }
 

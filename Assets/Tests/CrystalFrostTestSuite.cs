@@ -85,6 +85,56 @@ namespace CrystalFrost.Tests
         }
 
         [Test]
+        public void MaterialManager_QueueMaterialBinding_ShouldEnqueueAndProcessOnMainThread()
+        {
+            var cfAssetManager = new CFAssetManager();
+            var gameObject = new GameObject("TestRendererObject");
+            var renderer = gameObject.AddComponent<MeshRenderer>();
+            UUID textureId = UUID.Random();
+
+            try
+            {
+                cfAssetManager.RequestTexture(textureId, renderer, 0, Color.red, 0f, false);
+
+                Assert.AreEqual(1, cfAssetManager.MaterialBindingQueue.Count, "Material request should be enqueued into MaterialBindingQueue");
+
+                int processed = cfAssetManager.ProcessMaterialQueue(10.0f);
+                Assert.AreEqual(1, processed, "One request should be processed");
+                Assert.AreEqual(0, cfAssetManager.MaterialBindingQueue.Count, "MaterialBindingQueue should be empty after processing");
+
+                Assert.IsNotNull(renderer.sharedMaterials[0], "Material should be assigned via sharedMaterials");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(gameObject);
+                cfAssetManager.Dispose();
+            }
+        }
+
+        [Test]
+        public void MaterialManager_PerformMaintenance_ShouldProcessQueueAndCleanupWithoutGCCollect()
+        {
+            var cfAssetManager = new CFAssetManager();
+            var gameObject = new GameObject("TestMaintenanceObject");
+            var renderer = gameObject.AddComponent<MeshRenderer>();
+            UUID textureId = UUID.Random();
+
+            try
+            {
+                cfAssetManager.RequestTexture(textureId, renderer, 0, Color.blue, 0.5f, false);
+                Assert.AreEqual(1, cfAssetManager.MaterialBindingQueue.Count);
+
+                Assert.DoesNotThrow(() => cfAssetManager.PerformMaintenance());
+                Assert.AreEqual(0, cfAssetManager.MaterialBindingQueue.Count, "PerformMaintenance should process queued requests");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(gameObject);
+                cfAssetManager.Dispose();
+            }
+        }
+
+        [Test]
         public void AssetManager_ConcurrentAccess_ShouldBeThreadSafe()
         {
             // Test thread safety with concurrent requests

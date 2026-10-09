@@ -276,7 +276,8 @@ namespace CrystalFrost.Performance
             try
             {
                 var materials = FindObjectsOfType<Renderer>()
-                    .SelectMany(r => r.materials)
+                    .SelectMany(r => r.sharedMaterials)
+                    .Where(m => m != null)
                     .Distinct()
                     .ToList();
 

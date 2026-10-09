@@ -99,6 +99,16 @@ namespace CrystalFrost
 
         #region Material Management (delegates to MaterialManager)
 
+        public System.Collections.Concurrent.ConcurrentQueue<MaterialBindingRequest> MaterialBindingQueue => _materialManager.MaterialBindingQueue;
+
+        /// <summary>
+        /// Processes enqueued material binding requests on the main thread within the frame execution time budget.
+        /// </summary>
+        public int ProcessMaterialQueue(float maxExecutionTimeMs = 2.0f)
+        {
+            return _materialManager.ProcessMaterialQueue(maxExecutionTimeMs);
+        }
+
         /// <summary>
         /// Requests a material for a specific texture and renderer configuration
         /// </summary>
@@ -192,14 +202,8 @@ namespace CrystalFrost
             {
                 _logger.LogDebug("Performing asset manager maintenance");
                 
+                _materialManager.ProcessMaterialQueue();
                 _materialManager.CleanupUnusedMaterials();
-                
-                // Force garbage collection if needed
-                if (System.GC.GetTotalMemory(false) > 100 * 1024 * 1024) // 100MB threshold
-                {
-                    System.GC.Collect();
-                    _logger.LogDebug("Performed garbage collection");
-                }
             }
             catch (Exception ex)
             {

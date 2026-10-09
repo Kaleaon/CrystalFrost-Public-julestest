@@ -8,7 +8,8 @@ using Microsoft.Extensions.Logging;
 namespace CrystalFrost.UI
 {
     /// <summary>
-    /// Handles creation and management of inventory UI windows
+    /// Handles creation and management of modular inventory UI windows,
+    /// including tabbed views, tree view, worn items panel, draggable and resizable handles.
     /// </summary>
     public class InventoryUIController : MonoBehaviour
     {
@@ -21,7 +22,7 @@ namespace CrystalFrost.UI
 
         public void CreateInventoryWindow()
         {
-            _logger.LogInformation("Creating inventory window");
+            _logger?.LogInformation("Creating modular inventory window");
 
             // 1. Create Canvas
             GameObject canvasGO = new GameObject("InventoryCanvas");
@@ -34,47 +35,55 @@ namespace CrystalFrost.UI
             // 2. Create Window Panel
             GameObject windowPanel = CreateInventoryPanel(canvasGO.transform);
 
-            // 3. Create Tree View
-            GameObject treeView = CreateTreeView(windowPanel.transform);
+            // 3. Create Tab Bar
+            (Button invTabBtn, Button wornTabBtn) = CreateTabBar(windowPanel.transform);
 
-            // 4. Create Context Menu
+            // 4. Create Content Views
+            GameObject invTabContent = CreateTreeView(windowPanel.transform);
+            GameObject wornTabContent = CreateWornItemsView(windowPanel.transform);
+
+            // 5. Create Context Menu
             ContextMenuUI contextMenu = CreateContextMenu(windowPanel.transform);
 
-            // 5. Setup Inventory Window Component
+            // 6. Setup Inventory Window Component
             InventoryWindowUI inventoryWindow = windowPanel.AddComponent<InventoryWindowUI>();
             inventoryWindow.treeNodePrefab = CreateTreeNodePrefab();
-            inventoryWindow.contentRoot = treeView.transform.Find("Content");
+            inventoryWindow.contentRoot = invTabContent.transform.Find("Viewport/Content");
             inventoryWindow.contextMenu = contextMenu;
+            inventoryWindow.inventoryTabContent = invTabContent;
+            inventoryWindow.wornItemsTabContent = wornTabContent;
+            inventoryWindow.inventoryTabButton = invTabBtn;
+            inventoryWindow.wornItemsTabButton = wornTabBtn;
+            inventoryWindow.wornItemsPanel = wornTabContent.GetComponent<WornItemsPanelUI>();
 
-            // 6. Make window draggable
+            // 7. Make window draggable and resizable
             windowPanel.AddComponent<DraggableWindow>();
+            
+            GameObject resizeHandle = CreateResizeHandle(windowPanel.transform);
+            ResizableWindow resizable = resizeHandle.AddComponent<ResizableWindow>();
+            resizable.targetRectTransform = windowPanel.GetComponent<RectTransform>();
 
-            _logger.LogInformation("Inventory window created successfully");
+            _logger?.LogInformation("Modular inventory window created successfully");
         }
 
         private GameObject CreateInventoryPanel(Transform parent)
         {
             GameObject panel = CreateUIPrefab("InventoryPanel", parent);
-            panel.transform.SetParent(parent, false);
 
-            // Set up panel background
             Image panelImage = panel.AddComponent<Image>();
-            panelImage.color = new Color(0.2f, 0.2f, 0.2f, 0.9f);
+            panelImage.color = new Color(0.15f, 0.15f, 0.18f, 0.95f);
 
-            // Set panel size and position
             RectTransform panelRect = panel.GetComponent<RectTransform>();
-            panelRect.sizeDelta = new Vector2(400, 600);
+            panelRect.sizeDelta = new Vector2(420, 620);
             panelRect.anchoredPosition = Vector2.zero;
 
-            // Add layout
             VerticalLayoutGroup layout = panel.AddComponent<VerticalLayoutGroup>();
             layout.childControlWidth = true;
             layout.childControlHeight = false;
             layout.childForceExpandHeight = false;
-            layout.padding = new RectOffset(10, 10, 10, 10);
-            layout.spacing = 5;
+            layout.padding = new RectOffset(8, 8, 8, 8);
+            layout.spacing = 6;
 
-            // Add header
             CreateInventoryHeader(panel.transform);
 
             return panel;
@@ -83,13 +92,48 @@ namespace CrystalFrost.UI
         private void CreateInventoryHeader(Transform parent)
         {
             GameObject header = CreateUIPrefab("Header", parent);
-            header.AddComponent<LayoutElement>().minHeight = 30;
+            header.AddComponent<LayoutElement>().minHeight = 28;
 
             TMP_Text headerText = header.AddComponent<TMP_Text>();
-            headerText.text = "Inventory";
-            headerText.fontSize = 18;
+            headerText.text = "Inventory & Worn Items";
+            headerText.fontSize = 16;
             headerText.color = Color.white;
             headerText.alignment = TextAlignmentOptions.Center;
+        }
+
+        private (Button invBtn, Button wornBtn) CreateTabBar(Transform parent)
+        {
+            GameObject tabBar = CreateUIPrefab("TabBar", parent);
+            tabBar.AddComponent<LayoutElement>().minHeight = 30;
+
+            HorizontalLayoutGroup layout = tabBar.AddComponent<HorizontalLayoutGroup>();
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.spacing = 4;
+
+            Button invBtn = CreateTabButton(tabBar.transform, "Inventory Tree");
+            Button wornBtn = CreateTabButton(tabBar.transform, "Worn Items");
+
+            return (invBtn, wornBtn);
+        }
+
+        private Button CreateTabButton(Transform parent, string label)
+        {
+            GameObject btnGO = CreateUIPrefab($"Tab_{label}", parent);
+            Image img = btnGO.AddComponent<Image>();
+            img.color = new Color(0.25f, 0.25f, 0.32f, 0.9f);
+
+            Button btn = btnGO.AddComponent<Button>();
+
+            GameObject textGO = CreateUIPrefab("Text", btnGO.transform);
+            TMP_Text txt = textGO.AddComponent<TMP_Text>();
+            txt.text = label;
+            txt.fontSize = 13;
+            txt.color = Color.white;
+            txt.alignment = TextAlignmentOptions.Center;
+
+            return btn;
         }
 
         private GameObject CreateTreeView(Transform parent)
@@ -97,23 +141,19 @@ namespace CrystalFrost.UI
             GameObject treeView = CreateUIPrefab("TreeView", parent);
             treeView.AddComponent<LayoutElement>().flexibleHeight = 1;
 
-            // Create scroll view
             ScrollRect scrollRect = treeView.AddComponent<ScrollRect>();
             scrollRect.horizontal = false;
             scrollRect.vertical = true;
 
-            // Create viewport
             GameObject viewport = CreateUIPrefab("Viewport", treeView.transform);
-            viewport.AddComponent<Image>().color = new Color(0.1f, 0.1f, 0.1f, 0.8f);
+            viewport.AddComponent<Image>().color = new Color(0.1f, 0.1f, 0.12f, 0.85f);
             viewport.AddComponent<Mask>().showMaskGraphic = false;
 
             RectTransform viewportRect = viewport.GetComponent<RectTransform>();
             viewportRect.anchorMin = Vector2.zero;
             viewportRect.anchorMax = Vector2.one;
             viewportRect.sizeDelta = Vector2.zero;
-            viewportRect.anchoredPosition = Vector2.zero;
 
-            // Create content
             GameObject content = CreateUIPrefab("Content", viewport.transform);
             VerticalLayoutGroup contentLayout = content.AddComponent<VerticalLayoutGroup>();
             contentLayout.childControlWidth = true;
@@ -123,11 +163,47 @@ namespace CrystalFrost.UI
             ContentSizeFitter contentSizeFitter = content.AddComponent<ContentSizeFitter>();
             contentSizeFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            // Setup scroll rect
             scrollRect.viewport = viewportRect;
             scrollRect.content = content.GetComponent<RectTransform>();
 
             return treeView;
+        }
+
+        private GameObject CreateWornItemsView(Transform parent)
+        {
+            GameObject panel = CreateUIPrefab("WornItemsPanel", parent);
+            panel.AddComponent<LayoutElement>().flexibleHeight = 1;
+
+            ScrollRect scrollRect = panel.AddComponent<ScrollRect>();
+            scrollRect.horizontal = false;
+            scrollRect.vertical = true;
+
+            GameObject viewport = CreateUIPrefab("Viewport", panel.transform);
+            viewport.AddComponent<Image>().color = new Color(0.1f, 0.1f, 0.12f, 0.85f);
+            viewport.AddComponent<Mask>().showMaskGraphic = false;
+
+            RectTransform viewportRect = viewport.GetComponent<RectTransform>();
+            viewportRect.anchorMin = Vector2.zero;
+            viewportRect.anchorMax = Vector2.one;
+            viewportRect.sizeDelta = Vector2.zero;
+
+            GameObject content = CreateUIPrefab("Content", viewport.transform);
+            VerticalLayoutGroup contentLayout = content.AddComponent<VerticalLayoutGroup>();
+            contentLayout.childControlWidth = true;
+            contentLayout.childControlHeight = false;
+            contentLayout.childForceExpandHeight = false;
+            contentLayout.spacing = 4;
+
+            ContentSizeFitter contentSizeFitter = content.AddComponent<ContentSizeFitter>();
+            contentSizeFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            scrollRect.viewport = viewportRect;
+            scrollRect.content = content.GetComponent<RectTransform>();
+
+            WornItemsPanelUI wornPanel = panel.AddComponent<WornItemsPanelUI>();
+            wornPanel.contentRoot = content.transform;
+
+            return panel;
         }
 
         private GameObject CreateTreeNodePrefab()
@@ -138,36 +214,30 @@ namespace CrystalFrost.UI
             layout.childControlHeight = true;
             layout.childForceExpandWidth = false;
             layout.childForceExpandHeight = false;
-            layout.spacing = 5;
+            layout.spacing = 4;
 
-            // Create indent spacer
             GameObject indent = CreateUIPrefab("Indent", node.transform);
             LayoutElement indentLayout = indent.AddComponent<LayoutElement>();
             indentLayout.minWidth = 0;
-            indentLayout.flexibleWidth = 0;
 
-            // Create expand/collapse button
             GameObject expandButton = CreateUIPrefab("ExpandButton", node.transform);
-            expandButton.AddComponent<Image>().color = Color.gray;
+            expandButton.AddComponent<Image>().color = new Color(0.4f, 0.4f, 0.4f, 0.8f);
             expandButton.AddComponent<Button>();
             expandButton.GetComponent<RectTransform>().sizeDelta = new Vector2(16, 16);
 
-            // Create icon
             GameObject icon = CreateUIPrefab("Icon", node.transform);
-            icon.AddComponent<Image>().color = Color.cyan;
+            icon.AddComponent<Image>().color = Color.white;
             icon.GetComponent<RectTransform>().sizeDelta = new Vector2(16, 16);
 
-            // Create text
             GameObject text = CreateUIPrefab("Text", node.transform);
             TMP_Text tmpText = text.AddComponent<TMP_Text>();
             tmpText.text = "Item Name";
-            tmpText.fontSize = 14;
+            tmpText.fontSize = 13;
             tmpText.color = Color.white;
             text.AddComponent<LayoutElement>().flexibleWidth = 1;
 
-            // Add TreeNodeUI component
             TreeNodeUI treeNodeUI = node.AddComponent<TreeNodeUI>();
-            treeNodeUI.indentElement = indent.GetComponent<LayoutElement>();
+            treeNodeUI.indentElement = indentLayout;
             treeNodeUI.expandButton = expandButton.GetComponent<Button>();
             treeNodeUI.itemIcon = icon.GetComponent<Image>();
             treeNodeUI.itemNameText = tmpText;
@@ -180,32 +250,33 @@ namespace CrystalFrost.UI
             GameObject menuGO = CreateUIPrefab("ContextMenu", parent);
             menuGO.transform.SetParent(parent, false);
             Image img = menuGO.AddComponent<Image>();
-            img.color = new Color(0.1f, 0.1f, 0.1f, 0.9f);
-            menuGO.GetComponent<RectTransform>().sizeDelta = new Vector2(150, 200);
+            img.color = new Color(0.12f, 0.12f, 0.15f, 0.95f);
+            menuGO.GetComponent<RectTransform>().sizeDelta = new Vector2(160, 200);
 
             GameObject buttonParent = CreateUIPrefab("ButtonParent", menuGO.transform);
             VerticalLayoutGroup layout = buttonParent.AddComponent<VerticalLayoutGroup>();
             layout.childControlWidth = true;
             layout.childForceExpandHeight = false;
+            layout.spacing = 2;
 
             ContextMenuUI contextMenuUI = menuGO.AddComponent<ContextMenuUI>();
             contextMenuUI.buttonParent = buttonParent.transform;
             return contextMenuUI;
         }
 
-        private GameObject CreateContextMenuButtonPrefab()
+        private GameObject CreateResizeHandle(Transform parent)
         {
-            GameObject buttonGO = CreateUIPrefab("ContextMenuButtonPrefab", null);
-            buttonGO.AddComponent<Image>().color = new Color(0.3f, 0.3f, 0.3f, 1f);
-            buttonGO.AddComponent<Button>();
-            buttonGO.AddComponent<LayoutElement>().minHeight = 22;
+            GameObject handle = CreateUIPrefab("ResizeHandle", parent);
+            Image img = handle.AddComponent<Image>();
+            img.color = new Color(0.5f, 0.5f, 0.5f, 0.5f);
 
-            GameObject textGO = CreateUIPrefab("Text", buttonGO.transform);
-            TMP_Text text = textGO.AddComponent<TMP_Text>();
-            text.text = "Action";
-            text.color = Color.white;
-            text.alignment = TextAlignmentOptions.Center;
-            return buttonGO;
+            RectTransform rect = handle.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(1, 0);
+            rect.anchorMax = new Vector2(1, 0);
+            rect.pivot = new Vector2(1, 0);
+            rect.sizeDelta = new Vector2(16, 16);
+
+            return handle;
         }
 
         private GameObject CreateUIPrefab(string name, Transform parent)

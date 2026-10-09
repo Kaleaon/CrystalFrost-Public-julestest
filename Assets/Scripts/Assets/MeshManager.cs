@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 using OpenMetaverse;
 using OpenMetaverse.Assets;
@@ -119,113 +121,112 @@ namespace CrystalFrost.Assets
 
         private void ProcessMeshAsset(MeshQueueItem item, AssetMesh meshAsset)
         {
-            try
+            Task.Run(() =>
             {
-                // Process mesh on main thread
-                UnityMainThreadDispatcher.Instance().Enqueue(() =>
+                try
                 {
-                    ProcessMeshOnMainThread(item, meshAsset);
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Failed to process mesh asset {item.MeshUUID}");
-            }
-        }
-
-        private void ProcessMeshOnMainThread(MeshQueueItem item, AssetMesh meshAsset)
-        {
-            try
-            {
-                if (!meshAsset.Decode())
-                {
-                    _logger.LogWarning($"Failed to decode mesh asset {item.MeshUUID}");
-                    return;
-                }
-
-                Mesh unityMesh = ConvertToUnityMesh(meshAsset, item.Primitive);
-                if (unityMesh != null)
-                {
-                    unityMesh.name = item.MeshUUID.ToString();
-                    
-                    // Cache the mesh
-                    _meshCache[item.MeshUUID] = unityMesh;
-                    
-                    // Apply to game object
-                    ApplyMeshToObject(item.GameObject, unityMesh, item.MeshHolder);
-                    
-                    _logger.LogDebug($"Successfully processed mesh {item.MeshUUID}");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error processing mesh {item.MeshUUID} on main thread");
-            }
-        }
-
-        private Mesh ConvertToUnityMesh(AssetMesh meshAsset, Primitive primitive)
-        {
-            try
-            {
-                var mesh = new Mesh();
-                
-                // Convert vertices
-                if (meshAsset.Positions != null && meshAsset.Positions.Count > 0)
-                {
-                    Vector3[] vertices = new Vector3[meshAsset.Positions.Count];
-                    for (int i = 0; i < meshAsset.Positions.Count; i++)
+                    // Execute heavy binary mesh decoding on background thread
+                    if (!meshAsset.Decode())
                     {
-                        var omvPos = meshAsset.Positions[i];
-                        vertices[i] = new Vector3(omvPos.X, omvPos.Y, omvPos.Z);
+                        _logger.LogWarning($"Failed to decode mesh asset {item.MeshUUID}");
+                        return;
                     }
-                    mesh.vertices = vertices;
-                }
 
-                // Convert normals
-                if (meshAsset.Normals != null && meshAsset.Normals.Count > 0)
-                {
-                    Vector3[] normals = new Vector3[meshAsset.Normals.Count];
-                    for (int i = 0; i < meshAsset.Normals.Count; i++)
+                    // Extract raw vertex, normal, UV, and triangle data arrays on background thread
+                    Vector3[] vertices = null;
+                    if (meshAsset.Positions != null && meshAsset.Positions.Count > 0)
                     {
-                        var omvNormal = meshAsset.Normals[i];
-                        normals[i] = new Vector3(omvNormal.X, omvNormal.Y, omvNormal.Z);
+                        vertices = new Vector3[meshAsset.Positions.Count];
+                        for (int i = 0; i < meshAsset.Positions.Count; i++)
+                        {
+                            var omvPos = meshAsset.Positions[i];
+                            vertices[i] = new Vector3(omvPos.X, omvPos.Y, omvPos.Z);
+                        }
                     }
-                    mesh.normals = normals;
-                }
 
-                // Convert texture coordinates
-                if (meshAsset.TexCoords != null && meshAsset.TexCoords.Count > 0)
-                {
-                    Vector2[] uvs = new Vector2[meshAsset.TexCoords.Count];
-                    for (int i = 0; i < meshAsset.TexCoords.Count; i++)
+                    Vector3[] normals = null;
+                    if (meshAsset.Normals != null && meshAsset.Normals.Count > 0)
                     {
-                        var omvUV = meshAsset.TexCoords[i];
-                        uvs[i] = new Vector2(omvUV.X, omvUV.Y);
+                        normals = new Vector3[meshAsset.Normals.Count];
+                        for (int i = 0; i < meshAsset.Normals.Count; i++)
+                        {
+                            var omvNormal = meshAsset.Normals[i];
+                            normals[i] = new Vector3(omvNormal.X, omvNormal.Y, omvNormal.Z);
+                        }
                     }
-                    mesh.uv = uvs;
-                }
 
-                // Convert triangles
-                if (meshAsset.Indices != null && meshAsset.Indices.Count > 0)
-                {
-                    int[] triangles = new int[meshAsset.Indices.Count];
-                    for (int i = 0; i < meshAsset.Indices.Count; i++)
+                    Vector2[] uvs = null;
+                    if (meshAsset.TexCoords != null && meshAsset.TexCoords.Count > 0)
                     {
-                        triangles[i] = (int)meshAsset.Indices[i];
+                        uvs = new Vector2[meshAsset.TexCoords.Count];
+                        for (int i = 0; i < meshAsset.TexCoords.Count; i++)
+                        {
+                            var omvUV = meshAsset.TexCoords[i];
+                            uvs[i] = new Vector2(omvUV.X, omvUV.Y);
+                        }
                     }
-                    mesh.triangles = triangles;
+
+                    int[] triangles = null;
+                    if (meshAsset.Indices != null && meshAsset.Indices.Count > 0)
+                    {
+                        triangles = new int[meshAsset.Indices.Count];
+                        for (int i = 0; i < meshAsset.Indices.Count; i++)
+                        {
+                            triangles[i] = (int)meshAsset.Indices[i];
+                        }
+                    }
+
+                    // Enqueue lightweight Unity mesh creation to main thread
+                    UnityMainThreadDispatcher.Instance().Enqueue(() =>
+                    {
+                        try
+                        {
+                            if (item.GameObject == null && item.MeshHolder == null)
+                            {
+                                return;
+                            }
+
+                            var unityMesh = new Mesh();
+                            if (vertices != null && vertices.Length > 0)
+                            {
+                                unityMesh.SetVertices(vertices);
+                            }
+                            if (normals != null && normals.Length > 0)
+                            {
+                                unityMesh.SetNormals(normals);
+                            }
+                            if (uvs != null && uvs.Length > 0)
+                            {
+                                unityMesh.SetUVs(0, uvs);
+                            }
+                            if (triangles != null && triangles.Length > 0)
+                            {
+                                unityMesh.SetTriangles(triangles, 0);
+                            }
+
+                            unityMesh.RecalculateBounds();
+                            unityMesh.RecalculateTangents();
+                            unityMesh.name = item.MeshUUID.ToString();
+
+                            // Cache the mesh
+                            _meshCache[item.MeshUUID] = unityMesh;
+
+                            // Apply to game object
+                            ApplyMeshToObject(item.GameObject, unityMesh, item.MeshHolder);
+
+                            _logger.LogDebug($"Successfully processed mesh {item.MeshUUID}");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, $"Error building Unity mesh {item.MeshUUID} on main thread");
+                        }
+                    });
                 }
-
-                mesh.RecalculateBounds();
-                mesh.RecalculateTangents();
-
-                return mesh;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to convert OpenMetaverse mesh to Unity mesh");
-                return null;
-            }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Failed to process mesh asset {item.MeshUUID} on background thread");
+                }
+            });
         }
 
         private void ApplyMeshToObject(GameObject gameObject, Mesh mesh, GameObject meshHolder)
@@ -233,6 +234,7 @@ namespace CrystalFrost.Assets
             try
             {
                 GameObject targetObject = meshHolder ?? gameObject;
+                if (targetObject == null) return;
                 
                 var meshFilter = targetObject.GetComponent<MeshFilter>();
                 if (meshFilter == null)
@@ -285,139 +287,134 @@ namespace CrystalFrost.Assets
 
         private void ProcessSculptTexture(GameObject gameObject, Primitive primitive, AssetTexture assetTexture)
         {
+            if (gameObject == null || primitive == null || assetTexture?.AssetData == null)
+            {
+                _logger.LogWarning("Invalid parameters or texture data for sculpt processing");
+                return;
+            }
+
+            var sculptData = new SculptData
+            {
+                GameObject = gameObject,
+                Primitive = primitive,
+                ImageData = assetTexture.AssetData
+            };
+
+            Task.Run(() =>
+            {
+                ProcessSculptOnBackgroundThread(sculptData);
+            });
+        }
+
+        private void ProcessSculptOnBackgroundThread(SculptData sculptData)
+        {
             try
             {
-                // Process sculpt on main thread
+                // Decode sculpt texture data using CSJ2K on background thread
+                RawBytesImageCreator.Register();
+                var pi = J2kImage.FromBytes(sculptData.ImageData);
+                if (pi == null)
+                {
+                    _logger.LogError("Failed to decode sculpt texture: J2kImage is null");
+                    return;
+                }
+                var rawImage = pi.As<RawBytesImage>();
+                int width = rawImage.Width;
+                int height = rawImage.Height;
+                byte[] imageData = rawImage.Data;
+
+                // For now, we only support sphere sculpts
+                if (sculptData.Primitive.Sculpt.Type != SculptType.Sphere)
+                {
+                    _logger.LogWarning($"Unsupported sculpt type: {sculptData.Primitive.Sculpt.Type}. Only Sphere is supported for now.");
+                    return;
+                }
+
+                // Generate mesh data arrays from heightmap on background thread
+                var vertices = new List<Vector3>(width * height);
+                var uvs = new List<Vector2>(width * height);
+                var triangles = new List<int>((width - 1) * (height - 1) * 6);
+
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        // Get height from blue channel, as is standard for SL sculpts
+                        float z = imageData[(y * width + x) * 4 + 2] / 255.0f;
+
+                        // Map plane to sphere
+                        float lon = (x / (float)(width - 1)) * 2.0f * Mathf.PI;
+                        float lat = (y / (float)(height - 1)) * Mathf.PI;
+
+                        float radius = 0.5f * z; // Simple radius based on height
+
+                        vertices.Add(new Vector3(
+                            radius * Mathf.Sin(lat) * Mathf.Cos(lon),
+                            radius * Mathf.Cos(lat),
+                            radius * Mathf.Sin(lat) * Mathf.Sin(lon)
+                        ));
+
+                        uvs.Add(new Vector2(x / (float)width, y / (float)height));
+                    }
+                }
+
+                for (int y = 0; y < height - 1; y++)
+                {
+                    for (int x = 0; x < width - 1; x++)
+                    {
+                        int tl = y * width + x;
+                        int tr = tl + 1;
+                        int bl = (y + 1) * width + x;
+                        int br = bl + 1;
+
+                        triangles.Add(tl);
+                        triangles.Add(tr);
+                        triangles.Add(bl);
+
+                        triangles.Add(tr);
+                        triangles.Add(br);
+                        triangles.Add(bl);
+                    }
+                }
+
+                Vector3[] verticesArray = vertices.ToArray();
+                Vector2[] uvsArray = uvs.ToArray();
+                int[] trianglesArray = triangles.ToArray();
+
+                // Dispatch lightweight Unity mesh construction to main thread
                 UnityMainThreadDispatcher.Instance().Enqueue(() =>
                 {
-                    var sculptData = new SculptData
+                    try
                     {
-                        GameObject = gameObject,
-                        Primitive = primitive,
-                        ImageData = assetTexture.AssetData
-                    };
+                        if (sculptData.GameObject == null)
+                        {
+                            return;
+                        }
 
-                    _sculptQueue.Enqueue(sculptData);
-                    ProcessSculptQueue();
+                        var sculptMesh = new Mesh
+                        {
+                            name = "SculptMesh"
+                        };
+                        sculptMesh.SetVertices(verticesArray);
+                        sculptMesh.SetUVs(0, uvsArray);
+                        sculptMesh.SetTriangles(trianglesArray, 0);
+
+                        sculptMesh.RecalculateNormals();
+                        sculptMesh.RecalculateBounds();
+
+                        ApplyMeshToObject(sculptData.GameObject, sculptMesh, null);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to build sculpt mesh on main thread");
+                    }
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to process sculpt texture");
+                _logger.LogError(ex, "Failed to process sculpt on background thread");
             }
         }
-
-        private void ProcessSculptQueue()
-        {
-            if (!_sculptQueue.TryDequeue(out SculptData sculptData))
-                return;
-
-            try
-            {
-                // Create mesh from sculpt data
-                Mesh sculptMesh = CreateSculptMesh(sculptData);
-                if (sculptMesh != null)
-                {
-                    ApplyMeshToObject(sculptData.GameObject, sculptMesh, null);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to process sculpt from queue");
-            }
-        }
-
-		private Mesh CreateSculptMesh(SculptData sculptData)
-		{
-			try
-			{
-				// Decode the sculpt texture data using CSJ2K
-				RawBytesImageCreator.Register();
-				var pi = J2kImage.FromBytes(sculptData.ImageData);
-				if (pi == null)
-				{
-					_logger.LogError("Failed to decode sculpt texture: J2kImage is null");
-					return null;
-				}
-				var rawImage = pi.As<RawBytesImage>();
-				int width = rawImage.Width;
-				int height = rawImage.Height;
-				byte[] imageData = rawImage.Data;
-
-				// For now, we only support sphere sculpts
-				if (sculptData.Primitive.Sculpt.Type != SculptType.Sphere)
-				{
-					_logger.LogWarning($"Unsupported sculpt type: {sculptData.Primitive.Sculpt.Type}. Only Sphere is supported for now.");
-					return null;
-				}
-
-				// Generate the mesh from the heightmap
-				int x, y;
-				var vertices = new List<Vector3>();
-				var uvs = new List<Vector2>();
-				var triangles = new List<int>();
-
-				for (y = 0; y < height; y++)
-				{
-					for (x = 0; x < width; x++)
-					{
-						// Get height from blue channel, as is standard for SL sculpts
-						float z = imageData[(y * width + x) * 4 + 2] / 255.0f;
-
-						// Map plane to sphere
-						float lon = (x / (float)(width - 1)) * 2.0f * Mathf.PI;
-						float lat = (y / (float)(height - 1)) * Mathf.PI;
-
-						float radius = 0.5f * z; // Simple radius based on height
-
-						vertices.Add(new Vector3(
-							radius * Mathf.Sin(lat) * Mathf.Cos(lon),
-							radius * Mathf.Cos(lat),
-							radius * Mathf.Sin(lat) * Mathf.Sin(lon)
-						));
-
-						uvs.Add(new Vector2(x / (float)width, y / (float)height));
-					}
-				}
-
-				for (y = 0; y < height - 1; y++)
-				{
-					for (x = 0; x < width - 1; x++)
-					{
-						int tl = y * width + x;
-						int tr = tl + 1;
-						int bl = (y + 1) * width + x;
-						int br = bl + 1;
-
-						triangles.Add(tl);
-						triangles.Add(tr);
-						triangles.Add(bl);
-
-						triangles.Add(tr);
-						triangles.Add(br);
-						triangles.Add(bl);
-					}
-				}
-
-				var mesh = new Mesh
-				{
-					name = "SculptMesh",
-					vertices = vertices.ToArray(),
-					uv = uvs.ToArray(),
-					triangles = triangles.ToArray()
-				};
-
-				mesh.RecalculateNormals();
-				mesh.RecalculateBounds();
-
-				return mesh;
-			}
-			catch (Exception ex)
-			{
-				_logger.LogError(ex, "Failed to create sculpt mesh");
-				return null;
-			}
-		}
 
         public void ClearCache()
         {

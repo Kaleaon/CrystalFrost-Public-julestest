@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
@@ -29,10 +29,8 @@ namespace CrystalFrost.Logging
 	public class LogFileWriter : ILogFileWriter
 	{
 		private readonly string _filename;
-		private Task writerTask;
-		private bool taskrunning = false;
-
-		private static readonly SemaphoreSlim _semaphore = new(1, 1);
+		private int _isProcessing = 0;
+		private Exception? _lastException;
 
 		private class Entry
 		{
@@ -55,16 +53,28 @@ namespace CrystalFrost.Logging
 			_filename = Path.Combine(logDir, DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
 		}
 
-		private void WriterThread()
+		/// <summary>
+		/// Initializes a new instance of the <see cref="LogFileWriter"/> class with a specified filename.
+		/// </summary>
+		/// <param name="filename">The custom filename or path for the log file.</param>
+		public LogFileWriter(string filename)
 		{
-			_semaphore.Wait();
+			_filename = filename;
+			var logDir = Path.GetDirectoryName(_filename);
+			if (!string.IsNullOrEmpty(logDir) && !Directory.Exists(logDir))
+			{
+				Directory.CreateDirectory(logDir);
+			}
+		}
+
+		private void ProcessQueue()
+		{
 			try
 			{
-
-
-				using var filestream = new FileStream(_filename, FileMode.Append, FileAccess.Write);
+				using var filestream = new FileStream(_filename, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
 				using var streamwriter = new StreamWriter(filestream, Encoding.UTF8);
 
+				bool wroteAny = false;
 				while (_entries.TryDequeue(out Entry entry))
 				{
 					if (entry is null) continue;
@@ -75,13 +85,29 @@ namespace CrystalFrost.Logging
 					streamwriter.Write(entry.EventId.ToString());
 					streamwriter.Write(" ");
 					streamwriter.WriteLine(entry.Message);
+					wroteAny = true;
+				}
+
+				if (wroteAny)
+				{
 					streamwriter.Flush();
 				}
-				taskrunning = false;
+			}
+			catch (Exception ex)
+			{
+				_lastException = ex;
 			}
 			finally
 			{
-				_semaphore.Release();
+				Interlocked.Exchange(ref _isProcessing, 0);
+
+				if (!_entries.IsEmpty)
+				{
+					if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
+					{
+						Task.Run(ProcessQueue);
+					}
+				}
 			}
 		}
 
@@ -107,6 +133,13 @@ namespace CrystalFrost.Logging
 		/// <param name="message">The log message.</param>
 		public void Enqeue(int eventId, LogLevel level, string message)
 		{
+			if (_lastException != null)
+			{
+				var ex = _lastException;
+				_lastException = null;
+				throw ex;
+			}
+
 			_entries.Enqueue(new Entry
 			{
 				Occurred = DateTime.Now,
@@ -115,20 +148,9 @@ namespace CrystalFrost.Logging
 				EventId = eventId,
 			});
 
-			if (writerTask != null && writerTask.IsFaulted)
+			if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
 			{
-				throw writerTask.Exception;
-			}
-
-			if (!taskrunning)
-			{
-				_semaphore.Wait();
-				if (!taskrunning)
-				{
-					taskrunning = true;
-					writerTask = Task.Run(WriterThread);
-				}
-				_semaphore.Release();
+				Task.Run(ProcessQueue);
 			}
 		}
 	}

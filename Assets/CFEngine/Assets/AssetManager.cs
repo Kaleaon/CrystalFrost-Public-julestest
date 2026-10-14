@@ -1,5 +1,7 @@
-﻿using CrystalFrost.Assets.Animation;
+using CrystalFrost.Assets.Animation;
 using CrystalFrost.Assets.Mesh;
+using OpenMetaverse;
+using UnityEngine;
 
 namespace CrystalFrost.Assets
 {
@@ -20,6 +22,16 @@ namespace CrystalFrost.Assets
         /// Gets the animation asset manager.
         /// </summary>
         public IAnimationManager AnimationManager { get; }
+
+        /// <summary>
+        /// Requests a texture asset by UUID.
+        /// </summary>
+        Texture2D RequestTexture(UUID uuid);
+
+        /// <summary>
+        /// Requests a material asset by UUID and configuration.
+        /// </summary>
+        Material RequestMaterial(UUID uuid, Renderer renderer = null, int subMeshIndex = 0, Color color = default, float glow = 0f, bool fullbright = false);
     }
 
     /// <summary>
@@ -43,6 +55,18 @@ namespace CrystalFrost.Assets
             Textures = textures;
             Meshes = meshes;
             AnimationManager = animationManager;
+        }
+
+        public Texture2D RequestTexture(UUID uuid)
+        {
+            Textures?.RequestImage(uuid);
+            return null;
+        }
+
+        public Material RequestMaterial(UUID uuid, Renderer renderer = null, int subMeshIndex = 0, Color color = default, float glow = 0f, bool fullbright = false)
+        {
+            Textures?.RequestImage(uuid);
+            return null;
         }
     }
 }

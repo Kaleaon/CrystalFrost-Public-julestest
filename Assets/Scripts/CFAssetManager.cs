@@ -15,7 +15,7 @@ namespace CrystalFrost
     /// BEFORE: 1020-line monolithic class handling textures, materials, meshes, sculpts, caching
     /// AFTER: Lightweight coordinator delegating to specialized managers
     /// </summary>
-    public class CFAssetManager : IDisposable
+    public class CFAssetManager : IAssetManager, IDisposable
     {
         private readonly ILogger<CFAssetManager> _logger;
         private readonly IClientManagerService _clientManagerService;
@@ -24,6 +24,11 @@ namespace CrystalFrost
         private readonly TextureManager _textureManager;
         private readonly MaterialManager _materialManager;
         private readonly MeshManager _meshManager;
+
+        // IAssetManager explicit interface properties
+        public ITextureManager Textures => Services.GetService<ITextureManager>();
+        public IMeshManager Meshes => Services.GetService<IMeshManager>();
+        public IAnimationManager AnimationManager => Services.GetService<IAnimationManager>();
 
         // Backward compatibility properties
         public SimManager simManager;
@@ -102,7 +107,7 @@ namespace CrystalFrost
         /// <summary>
         /// Requests a material for a specific texture and renderer configuration
         /// </summary>
-        public Material RequestTexture(UUID uuid, Renderer renderer, int subMeshIndex, Color color, float glow, bool fullbright)
+        public Material RequestMaterial(UUID uuid, Renderer renderer = null, int subMeshIndex = 0, Color color = default, float glow = 0f, bool fullbright = false)
         {
             try
             {
@@ -113,6 +118,14 @@ namespace CrystalFrost
                 _logger.LogError(ex, $"Failed to request material for texture {uuid}");
                 return _materialManager.ZeroMaterial;
             }
+        }
+
+        /// <summary>
+        /// Requests a material for a specific texture and renderer configuration (backward compatibility overload)
+        /// </summary>
+        public Material RequestTexture(UUID uuid, Renderer renderer, int subMeshIndex, Color color, float glow, bool fullbright)
+        {
+            return RequestMaterial(uuid, renderer, subMeshIndex, color, glow, fullbright);
         }
 
         /// <summary>

@@ -156,6 +156,12 @@ public class MarketplaceIntegration : MonoBehaviour
     [Tooltip("Prefab for individual product items")]
     public GameObject productItemPrefab;
     
+    [Tooltip("Prefab for skeleton card placeholders")]
+    public GameObject skeletonCardPrefab;
+
+    [Tooltip("Default skeleton texture placeholder while loading remote textures")]
+    public Texture2D defaultSkeletonTexture;
+
     [Tooltip("Scroll view for product browsing")]
     public ScrollRect productScrollRect;
     
@@ -529,14 +535,58 @@ public class MarketplaceIntegration : MonoBehaviour
     }
     
     /// <summary>
+    /// Returns the assigned default skeleton texture or creates a neutral placeholder texture
+    /// </summary>
+    private Texture2D GetOrCreateSkeletonTexture()
+    {
+        if (defaultSkeletonTexture != null) return defaultSkeletonTexture;
+        Texture2D tex = new Texture2D(2, 2);
+        Color placeholderColor = new Color(0.8f, 0.8f, 0.8f, 1.0f);
+        tex.SetPixels(new Color[] { placeholderColor, placeholderColor, placeholderColor, placeholderColor });
+        tex.Apply();
+        defaultSkeletonTexture = tex;
+        return defaultSkeletonTexture;
+    }
+
+    /// <summary>
+    /// Displays skeleton card prefabs in productGridRoot immediately when product fetching starts
+    /// </summary>
+    private void DisplaySkeletons()
+    {
+        if (productGridRoot == null) return;
+
+        foreach (Transform child in productGridRoot)
+        {
+            Destroy(child.gameObject);
+        }
+
+        int count = productsPerPage > 0 ? Mathf.Min(productsPerPage, 6) : 6;
+        GameObject prefabToInstantiate = skeletonCardPrefab != null ? skeletonCardPrefab : productItemPrefab;
+
+        if (prefabToInstantiate != null)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                var skeletonObj = Instantiate(prefabToInstantiate, productGridRoot);
+                var img = skeletonObj.transform.Find("ProductImage")?.GetComponent<RawImage>();
+                if (img != null)
+                {
+                    img.texture = GetOrCreateSkeletonTexture();
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Asynchronous product fetching from marketplace API
     /// In production, this would query the actual SL Marketplace API
     /// </summary>
     /// <returns>Coroutine enumerator</returns>
     IEnumerator FetchProducts()
     {
-        // Clear current product list
+        // Clear current product list and instantiate skeleton card prefabs immediately
         currentProducts.Clear();
+        DisplaySkeletons();
         
         // Simulate API delay (in production, this would be actual HTTP request)
         yield return new WaitForSeconds(0.5f);
@@ -548,7 +598,7 @@ public class MarketplaceIntegration : MonoBehaviour
         // Apply current filters and sorting
         FilterAndSortProducts();
         
-        // Update UI display
+        // Update UI display (replaces skeleton placeholders)
         DisplayProducts();
     }
     
@@ -685,10 +735,21 @@ public class MarketplaceIntegration : MonoBehaviour
         if (sellerText) sellerText.text = $"by {product.sellerName}";
         if (ratingText) ratingText.text = $"★ {product.rating:F1} ({product.reviewCount})";
         
-        // Load product image asynchronously
-        if (productImage && !string.IsNullOrEmpty(product.imageUrl))
+        // Load product image asynchronously or display cached / skeleton image
+        if (productImage)
         {
-            StartCoroutine(LoadProductImage(product, productImage));
+            if (product.image != null)
+            {
+                productImage.texture = product.image;
+            }
+            else
+            {
+                productImage.texture = GetOrCreateSkeletonTexture();
+                if (!string.IsNullOrEmpty(product.imageUrl))
+                {
+                    StartCoroutine(LoadProductImage(product, productImage));
+                }
+            }
         }
         
         // Setup click handler for product selection
@@ -707,6 +768,11 @@ public class MarketplaceIntegration : MonoBehaviour
     /// <returns>Coroutine enumerator</returns>
     IEnumerator LoadProductImage(MarketplaceProduct product, RawImage imageComponent)
     {
+        if (imageComponent != null)
+        {
+            imageComponent.texture = GetOrCreateSkeletonTexture();
+        }
+
         using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(product.imageUrl))
         {
             yield return request.SendWebRequest();
@@ -714,7 +780,10 @@ public class MarketplaceIntegration : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success)
             {
                 product.image = ((DownloadHandlerTexture)request.downloadHandler).texture;
-                imageComponent.texture = product.image;
+                if (imageComponent != null)
+                {
+                    imageComponent.texture = product.image;
+                }
             }
         }
     }

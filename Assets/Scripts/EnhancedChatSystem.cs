@@ -73,11 +73,13 @@ public class EnhancedChatSystem : MonoBehaviour
         public ChatType type;
         public UUID targetID; // For IM tabs
         public List<ChatMessage> messages = new();
+        public Queue<GameObject> uiObjects = new();
         public GameObject tabButton;
         public GameObject chatPanel;
         public Transform contentRoot;
         public bool hasUnreadMessages = false;
         public int unreadCount = 0;
+        public bool isDirty = false;
     }
     
     public enum ChatType
@@ -277,8 +279,14 @@ public class EnhancedChatSystem : MonoBehaviour
         activeTab.unreadCount = 0;
         UpdateTabNotification(activeTab);
         
-        // Scroll to bottom
-        StartCoroutine(ScrollToBottom());
+        if (activeTab.isDirty)
+        {
+            RefreshActiveTab();
+        }
+        else
+        {
+            StartCoroutine(ScrollToBottom());
+        }
     }
 
     System.Collections.IEnumerator ScrollToBottom()
@@ -435,14 +443,42 @@ public class EnhancedChatSystem : MonoBehaviour
         var tab = chatTabs[tabName];
         tab.messages.Add(message);
         
-        // Limit message history
-        if (tab.messages.Count > 1000)
+        // Limit message history and prune oldest UI GameObject
+        while (tab.messages.Count > 1000)
         {
             tab.messages.RemoveAt(0);
+            if (tab.uiObjects.Count > 0)
+            {
+                var oldObj = tab.uiObjects.Dequeue();
+                if (oldObj != null)
+                {
+                    Destroy(oldObj);
+                }
+            }
         }
         
-        // Create message display
-        CreateMessageDisplay(tab, message);
+        while (tab.uiObjects.Count > 1000)
+        {
+            var oldObj = tab.uiObjects.Dequeue();
+            if (oldObj != null)
+            {
+                Destroy(oldObj);
+            }
+        }
+        
+        // Defer UI GameObject creation on background tabs
+        if (tab == activeTab)
+        {
+            var messageObj = CreateMessageDisplay(tab, message);
+            if (messageObj != null)
+            {
+                tab.uiObjects.Enqueue(messageObj);
+            }
+        }
+        else
+        {
+            tab.isDirty = true;
+        }
         
         // Update unread count if not active tab
         if (tab != activeTab)
@@ -465,12 +501,12 @@ public class EnhancedChatSystem : MonoBehaviour
         }
     }
 
-    void CreateMessageDisplay(ChatTab tab, ChatMessage message)
+    GameObject CreateMessageDisplay(ChatTab tab, ChatMessage message)
     {
-        if (tab.contentRoot == null) return;
+        if (tab.contentRoot == null) return null;
         
         GameObject messagePrefab = message.isSystem ? systemMessagePrefab : chatMessagePrefab;
-        if (messagePrefab == null) return;
+        if (messagePrefab == null) return null;
         
         var messageObj = Instantiate(messagePrefab, tab.contentRoot);
         
@@ -520,6 +556,8 @@ public class EnhancedChatSystem : MonoBehaviour
                 messageText.fontSize = fontSizeSlider.value;
             }
         }
+
+        return messageObj;
     }
 
     void SendMessage()
@@ -684,6 +722,8 @@ public class EnhancedChatSystem : MonoBehaviour
         
         // Clear messages
         activeTab.messages.Clear();
+        activeTab.uiObjects.Clear();
+        activeTab.isDirty = false;
         
         // Clear UI
         foreach (Transform child in activeTab.contentRoot)
@@ -1007,11 +1047,18 @@ public class EnhancedChatSystem : MonoBehaviour
         {
             Destroy(child.gameObject);
         }
+        activeTab.uiObjects.Clear();
         
         foreach (var message in activeTab.messages)
         {
-            CreateMessageDisplay(activeTab, message);
+            var messageObj = CreateMessageDisplay(activeTab, message);
+            if (messageObj != null)
+            {
+                activeTab.uiObjects.Enqueue(messageObj);
+            }
         }
+        
+        activeTab.isDirty = false;
         
         StartCoroutine(ScrollToBottom());
     }

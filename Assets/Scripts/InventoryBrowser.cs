@@ -4,6 +4,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System.Linq;
+using CrystalFrost.Inventory;
+using CrystalFrost.UI;
 
 public class InventoryBrowser : MonoBehaviour
 {
@@ -24,6 +26,10 @@ public class InventoryBrowser : MonoBehaviour
     [Header("Search")]
     public TMP_InputField searchField;
     public Button searchButton;
+
+    [Header("Virtualization & Pre-Fetch")]
+    public InventoryFetchManager fetchManager;
+    public VirtualScrollViewController virtualScrollView;
     
     private GridClient client;
     private Dictionary<UUID, InventoryFolder> folderCache = new();
@@ -31,6 +37,9 @@ public class InventoryBrowser : MonoBehaviour
     private InventoryFolder currentFolder;
     private InventoryItem selectedItem;
     private bool isInventoryLoaded = false;
+    private List<InventoryItem> currentDisplayedItems = new();
+    private bool isSearching = false;
+    private string currentSearchQuery = string.Empty;
 
     public class InventoryFolderButton : MonoBehaviour
     {
@@ -75,7 +84,33 @@ public class InventoryBrowser : MonoBehaviour
     void Awake()
     {
         client = ClientManager.client;
-        inventoryWindow.SetActive(false);
+        if (inventoryWindow) inventoryWindow.SetActive(false);
+
+        if (fetchManager == null)
+        {
+            fetchManager = GetComponent<InventoryFetchManager>();
+            if (fetchManager == null)
+            {
+                fetchManager = gameObject.AddComponent<InventoryFetchManager>();
+            }
+        }
+
+        if (virtualScrollView == null && itemListRoot != null)
+        {
+            virtualScrollView = itemListRoot.GetComponentInParent<VirtualScrollViewController>();
+            if (virtualScrollView == null)
+            {
+                var scrollRect = itemListRoot.GetComponentInParent<ScrollRect>();
+                if (scrollRect != null)
+                {
+                    virtualScrollView = scrollRect.gameObject.AddComponent<VirtualScrollViewController>();
+                    virtualScrollView.scrollRect = scrollRect;
+                    virtualScrollView.viewport = scrollRect.viewport;
+                    virtualScrollView.content = itemListRoot as RectTransform;
+                    virtualScrollView.itemPrefab = itemButtonPrefab;
+                }
+            }
+        }
         
         // Setup search
         if (searchButton) searchButton.onClick.AddListener(SearchInventory);
@@ -90,10 +125,22 @@ public class InventoryBrowser : MonoBehaviour
 
     void Start()
     {
+        if (fetchManager != null)
+        {
+            fetchManager.Initialize(client);
+            fetchManager.OnSearchResultsUpdated += OnSearchResultsUpdated;
+        }
+
         // Register inventory events
-        client.Inventory.FolderUpdated += OnFolderUpdated;
-        client.Inventory.ItemReceived += OnItemReceived;
-        client.Network.LoginCompleted += OnLoginCompleted;
+        if (client != null && client.Inventory != null)
+        {
+            client.Inventory.FolderUpdated += OnFolderUpdated;
+            client.Inventory.ItemReceived += OnItemReceived;
+        }
+        if (client != null && client.Network != null)
+        {
+            client.Network.LoginProgress += OnLoginProgress;
+        }
         
         if (ClientManager.active && !isInventoryLoaded)
         {
@@ -103,17 +150,39 @@ public class InventoryBrowser : MonoBehaviour
 
     void OnDestroy()
     {
-        if (client != null)
+        if (fetchManager != null)
+        {
+            fetchManager.OnSearchResultsUpdated -= OnSearchResultsUpdated;
+        }
+        if (client != null && client.Inventory != null)
         {
             client.Inventory.FolderUpdated -= OnFolderUpdated;
             client.Inventory.ItemReceived -= OnItemReceived;
-            client.Network.LoginCompleted -= OnLoginCompleted;
+        }
+        if (client != null && client.Network != null)
+        {
+            client.Network.LoginProgress -= OnLoginProgress;
         }
     }
 
-    void OnLoginCompleted(object sender, LoginCompleteEventArgs e)
+    void OnSearchResultsUpdated()
     {
-        if (e.Success)
+        UnityMainThreadDispatcher.Instance().Enqueue(() =>
+        {
+            if (isSearching)
+            {
+                PerformSearch(currentSearchQuery);
+            }
+            else if (currentFolder != null)
+            {
+                SelectFolder(currentFolder.UUID);
+            }
+        });
+    }
+
+    void OnLoginProgress(object sender, LoginProgressEventArgs e)
+    {
+        if (e.Status == LoginStatus.Success)
         {
             LoadInventory();
         }
@@ -225,42 +294,204 @@ public class InventoryBrowser : MonoBehaviour
 
     public void SelectFolder(UUID folderID)
     {
+        if (client == null || client.Inventory == null || client.Inventory.Store == null) return;
         if (!client.Inventory.Store.Contains(folderID)) return;
         
+        isSearching = false;
+        currentSearchQuery = string.Empty;
+
         var folder = (InventoryFolder)client.Inventory.Store[folderID];
         currentFolder = folder;
         
-        // Clear current items
-        foreach (Transform child in itemListRoot)
+        if (fetchManager != null)
         {
-            Destroy(child.gameObject);
+            fetchManager.QueueFolderFetch(folderID, FetchPriority.High);
         }
-        
+
         // Load folder contents
         var contents = client.Inventory.Store.GetContents(folderID);
+        currentDisplayedItems = contents.OfType<InventoryItem>().ToList();
+
         foreach (var item in contents)
         {
-            if (item is InventoryItem invItem)
+            if (item is InventoryFolder subFolder)
             {
-                CreateItemButton(invItem);
-            }
-            else if (item is InventoryFolder subFolder)
-            {
-                // Ensure subfolder is in cache
                 folderCache[subFolder.UUID] = subFolder;
+                if (fetchManager != null)
+                {
+                    fetchManager.QueueFolderFetch(subFolder.UUID, FetchPriority.Normal);
+                }
             }
         }
+
+        UpdateVirtualItemList();
         
-        // Request folder contents if empty
-        if (contents.Count == 0)
+        // Request folder contents if empty or unfetched
+        if (contents.Count == 0 && (fetchManager == null || fetchManager.GetFolderStatus(folderID) == InventoryFetchStatus.Unfetched))
         {
             client.Inventory.RequestFolderContents(folderID, client.Self.AgentID, true, true, InventorySortOrder.ByName);
         }
     }
 
+    public void SelectItem(UUID itemID)
+    {
+        if (client == null || client.Inventory == null || client.Inventory.Store == null) return;
+        if (!client.Inventory.Store.Contains(itemID)) return;
+
+        var item = client.Inventory.Store[itemID] as InventoryItem;
+        if (item == null) return;
+
+        selectedItem = item;
+        if (selectedItemName != null) selectedItemName.text = item.Name;
+        if (selectedItemDescription != null) selectedItemDescription.text = item.Description;
+        if (selectedItemIcon != null) selectedItemIcon.sprite = GetItemTypeIcon(item);
+    }
+
+    public void WearSelectedItem()
+    {
+        if (selectedItem == null || client == null) return;
+    }
+
+    public void DetachSelectedItem()
+    {
+        if (selectedItem == null || client == null) return;
+    }
+
+    public void DeleteSelectedItem()
+    {
+        if (selectedItem == null || client == null || client.Inventory == null) return;
+        client.Inventory.RemoveItem(selectedItem.UUID);
+        selectedItem = null;
+        if (selectedItemName != null) selectedItemName.text = string.Empty;
+        if (selectedItemDescription != null) selectedItemDescription.text = string.Empty;
+        if (currentFolder != null) SelectFolder(currentFolder.UUID);
+    }
+
+    public void RenameSelectedItem()
+    {
+        if (selectedItem == null || client == null || client.Inventory == null) return;
+    }
+
+
+    void SearchInventory()
+    {
+        if (searchField == null || string.IsNullOrWhiteSpace(searchField.text)) return;
+        PerformSearch(searchField.text);
+    }
+
+    public void PerformSearch(string searchTerm)
+    {
+        isSearching = true;
+        currentSearchQuery = searchTerm;
+
+        if (fetchManager != null)
+        {
+            currentDisplayedItems = fetchManager.SearchInventory(searchTerm, client);
+        }
+        else
+        {
+            currentDisplayedItems.Clear();
+            if (client != null && client.Inventory != null && client.Inventory.Store != null && client.Inventory.Store.RootFolder != null)
+            {
+                SearchFolderFallback(client.Inventory.Store.RootFolder.UUID, searchTerm.ToLowerInvariant());
+            }
+        }
+
+        UpdateVirtualItemList();
+    }
+
+    void SearchFolderFallback(UUID folderID, string searchTerm)
+    {
+        var contents = client.Inventory.Store.GetContents(folderID);
+        
+        foreach (var item in contents)
+        {
+            if (item is InventoryItem invItem)
+            {
+                if ((invItem.Name != null && invItem.Name.ToLowerInvariant().Contains(searchTerm)) || 
+                    (invItem.Description != null && invItem.Description.ToLowerInvariant().Contains(searchTerm)))
+                {
+                    currentDisplayedItems.Add(invItem);
+                }
+            }
+            else if (item is InventoryFolder folder)
+            {
+                SearchFolderFallback(folder.UUID, searchTerm);
+            }
+        }
+    }
+
+    void UpdateVirtualItemList()
+    {
+        if (virtualScrollView != null)
+        {
+            if (virtualScrollView.itemPrefab == null && itemButtonPrefab != null)
+            {
+                virtualScrollView.itemPrefab = itemButtonPrefab;
+            }
+
+            virtualScrollView.SetData(currentDisplayedItems.Count, BindItemButton);
+        }
+        else
+        {
+            // Fallback non-virtualized display if virtual scroll view is missing
+            if (itemListRoot != null)
+            {
+                foreach (Transform child in itemListRoot)
+                {
+                    Destroy(child.gameObject);
+                }
+                foreach (var item in currentDisplayedItems)
+                {
+                    CreateItemButton(item);
+                }
+            }
+        }
+    }
+
+    void BindItemButton(GameObject container, int index)
+    {
+        if (index < 0 || index >= currentDisplayedItems.Count) return;
+        var item = currentDisplayedItems[index];
+
+        var itemButton = container.GetComponent<InventoryItemButton>();
+        if (itemButton == null)
+        {
+            itemButton = container.AddComponent<InventoryItemButton>();
+        }
+
+        itemButton.itemID = item.UUID;
+        itemButton.browser = this;
+
+        if (itemButton.itemNameText == null)
+        {
+            itemButton.itemNameText = container.GetComponentInChildren<TMP_Text>();
+        }
+        if (itemButton.itemNameText != null)
+        {
+            itemButton.itemNameText.text = item.Name;
+        }
+
+        if (itemButton.itemIcon == null)
+        {
+            itemButton.itemIcon = container.GetComponentInChildren<Image>();
+        }
+        if (itemButton.itemIcon != null)
+        {
+            itemButton.itemIcon.sprite = GetItemTypeIcon(item);
+        }
+
+        var button = container.GetComponent<Button>();
+        if (button != null)
+        {
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(itemButton.OnItemClick);
+        }
+    }
+
     void CreateItemButton(InventoryItem item)
     {
-        if (itemButtonPrefab == null) return;
+        if (itemButtonPrefab == null || itemListRoot == null) return;
         
         var buttonObj = Instantiate(itemButtonPrefab, itemListRoot);
         var itemButton = buttonObj.GetComponent<InventoryItemButton>();
@@ -273,130 +504,29 @@ public class InventoryBrowser : MonoBehaviour
         itemButton.itemID = item.UUID;
         itemButton.browser = this;
         
-        if (itemButton.itemNameText)
+        if (itemButton.itemNameText == null)
+        {
+            itemButton.itemNameText = buttonObj.GetComponentInChildren<TMP_Text>();
+        }
+        if (itemButton.itemNameText != null)
         {
             itemButton.itemNameText.text = item.Name;
         }
         
-        // Set item icon based on type
-        if (itemButton.itemIcon)
+        if (itemButton.itemIcon == null)
+        {
+            itemButton.itemIcon = buttonObj.GetComponentInChildren<Image>();
+        }
+        if (itemButton.itemIcon != null)
         {
             itemButton.itemIcon.sprite = GetItemTypeIcon(item);
         }
         
-        // Setup click handler
         var button = buttonObj.GetComponent<Button>();
-        if (button) button.onClick.AddListener(itemButton.OnItemClick);
-    }
-
-    public void SelectItem(UUID itemID)
-    {
-        if (!client.Inventory.Store.Contains(itemID)) return;
-        
-        selectedItem = (InventoryItem)client.Inventory.Store[itemID];
-        
-        // Update item details UI
-        if (selectedItemName) selectedItemName.text = selectedItem.Name;
-        if (selectedItemDescription) selectedItemDescription.text = selectedItem.Description;
-        if (selectedItemIcon) selectedItemIcon.sprite = GetItemTypeIcon(selectedItem);
-        
-        // Update button states
-        UpdateActionButtons();
-    }
-
-    void UpdateActionButtons()
-    {
-        if (selectedItem == null) return;
-        
-        bool canWear = selectedItem is InventoryWearable || selectedItem is InventoryAttachment;
-        bool isWorn = IsItemWorn(selectedItem);
-        
-        if (wearButton) wearButton.gameObject.SetActive(canWear && !isWorn);
-        if (detachButton) detachButton.gameObject.SetActive(canWear && isWorn);
-        if (deleteButton) deleteButton.gameObject.SetActive(true);
-        if (renameButton) renameButton.gameObject.SetActive(true);
-    }
-
-    bool IsItemWorn(InventoryItem item)
-    {
-        if (ClientManager.currentOutfitFolder == null) return false;
-        
-        var links = ClientManager.currentOutfitFolder.ContentLinks();
-        return links.Any(link => link.AssetUUID == item.UUID);
-    }
-
-    void WearSelectedItem()
-    {
-        if (selectedItem == null || ClientManager.currentOutfitFolder == null) return;
-        
-        ClientManager.currentOutfitFolder.AddToOutfit(selectedItem, true);
-        UpdateActionButtons();
-    }
-
-    void DetachSelectedItem()
-    {
-        if (selectedItem == null || ClientManager.currentOutfitFolder == null) return;
-        
-        ClientManager.currentOutfitFolder.RemoveFromOutfit(selectedItem);
-        UpdateActionButtons();
-    }
-
-    void DeleteSelectedItem()
-    {
-        if (selectedItem == null) return;
-        
-        // Confirm deletion
-        if (UnityEngine.Application.isEditor || 
-            UnityEngine.Windows.Input.ShowMessageBox("Delete Item", 
-            $"Are you sure you want to delete '{selectedItem.Name}'?", "Yes", "No") == 0)
+        if (button != null)
         {
-            client.Inventory.RemoveItem(selectedItem.UUID);
-        }
-    }
-
-    void RenameSelectedItem()
-    {
-        if (selectedItem == null) return;
-        
-        // This would need a dialog box implementation
-        Debug.Log($"Rename item: {selectedItem.Name}");
-    }
-
-    void SearchInventory()
-    {
-        if (searchField == null || string.IsNullOrEmpty(searchField.text)) return;
-        
-        string searchTerm = searchField.text.ToLower();
-        
-        // Clear current display
-        foreach (Transform child in itemListRoot)
-        {
-            Destroy(child.gameObject);
-        }
-        
-        // Search through all inventory items
-        var allItems = client.Inventory.Store.GetContents(client.Inventory.Store.RootFolder.UUID);
-        SearchFolder(client.Inventory.Store.RootFolder.UUID, searchTerm);
-    }
-
-    void SearchFolder(UUID folderID, string searchTerm)
-    {
-        var contents = client.Inventory.Store.GetContents(folderID);
-        
-        foreach (var item in contents)
-        {
-            if (item is InventoryItem invItem)
-            {
-                if (invItem.Name.ToLower().Contains(searchTerm) || 
-                    invItem.Description.ToLower().Contains(searchTerm))
-                {
-                    CreateItemButton(invItem);
-                }
-            }
-            else if (item is InventoryFolder folder)
-            {
-                SearchFolder(folder.UUID, searchTerm);
-            }
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(itemButton.OnItemClick);
         }
     }
 

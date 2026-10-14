@@ -14,21 +14,39 @@ public class ParticleSystemObjectTracker : MonoBehaviour
 
     void Start()
     {
-        p = GetComponent<ParticleSystem>();
+        if (p == null)
+        {
+            p = GetComponent<ParticleSystem>();
+        }
+
         sqrDist = affectDistance * affectDistance;
+
+        if (p != null)
+        {
+            EnsureBufferCapacity(p.main.maxParticles);
+        }
     }
 
 
     void Update()
     {
-
-        particles = new ParticleSystem.Particle[p.particleCount];
-
-        p.GetParticles(particles);
-
-        for (int i = 0; i < particles.GetUpperBound(0); i++)
+        if (p == null)
         {
+            p = GetComponent<ParticleSystem>();
+        }
 
+        if (p == null || Target == null)
+        {
+            return;
+        }
+
+        int maxParticles = p.main.maxParticles;
+        EnsureBufferCapacity(maxParticles);
+
+        int count = p.GetParticles(particles);
+
+        for (int i = 0; i < count; i++)
+        {
             float ForceToAdd = (particles[i].startLifetime - particles[i].remainingLifetime) * (10 * Vector3.Distance(Target.position, particles[i].position));
 
             //Debug.DrawRay (particles [i].position, (Target.position - particles [i].position).normalized * (ForceToAdd/10));
@@ -36,10 +54,16 @@ public class ParticleSystemObjectTracker : MonoBehaviour
             particles[i].velocity = (Target.position - particles[i].position).normalized * ForceToAdd;
 
             //particles [i].position = Vector3.Lerp (particles [i].position, Target.position, Time.deltaTime / 2.0f);
-
         }
 
-        p.SetParticles(particles, particles.Length);
+        p.SetParticles(particles, count);
+    }
 
+    private void EnsureBufferCapacity(int requiredCapacity)
+    {
+        if (particles == null || particles.Length < requiredCapacity)
+        {
+            particles = new ParticleSystem.Particle[requiredCapacity];
+        }
     }
 }

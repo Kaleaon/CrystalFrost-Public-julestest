@@ -116,16 +116,16 @@ public class SearchWindow : MonoBehaviour
         if (categoryDropdown)
         {
             categoryDropdown.options.Clear();
-            categoryDropdown.options.Add(new TMP_Dropdown.OptionData("Any Category"));
-            categoryDropdown.options.Add(new TMP_Dropdown.OptionData("Shopping"));
-            categoryDropdown.options.Add(new TMP_Dropdown.OptionData("Hangout"));
-            categoryDropdown.options.Add(new TMP_Dropdown.OptionData("Parks & Nature"));
-            categoryDropdown.options.Add(new TMP_Dropdown.OptionData("Residential"));
-            categoryDropdown.options.Add(new TMP_Dropdown.OptionData("Arts & Culture"));
-            categoryDropdown.options.Add(new TMP_Dropdown.OptionData("Business"));
-            categoryDropdown.options.Add(new TMP_Dropdown.OptionData("Educational"));
-            categoryDropdown.options.Add(new TMP_Dropdown.OptionData("Gaming"));
-            categoryDropdown.options.Add(new TMP_Dropdown.OptionData("Other"));
+            categoryDropdown.options.Add(new TMP_Dropdown.OptionData(LocalizationManager.GetString("search.category.any", "Any Category")));
+            categoryDropdown.options.Add(new TMP_Dropdown.OptionData(LocalizationManager.GetString("search.category.shopping", "Shopping")));
+            categoryDropdown.options.Add(new TMP_Dropdown.OptionData(LocalizationManager.GetString("search.category.hangout", "Hangout")));
+            categoryDropdown.options.Add(new TMP_Dropdown.OptionData(LocalizationManager.GetString("search.category.parks_nature", "Parks & Nature")));
+            categoryDropdown.options.Add(new TMP_Dropdown.OptionData(LocalizationManager.GetString("search.category.residential", "Residential")));
+            categoryDropdown.options.Add(new TMP_Dropdown.OptionData(LocalizationManager.GetString("search.category.arts_culture", "Arts & Culture")));
+            categoryDropdown.options.Add(new TMP_Dropdown.OptionData(LocalizationManager.GetString("search.category.business", "Business")));
+            categoryDropdown.options.Add(new TMP_Dropdown.OptionData(LocalizationManager.GetString("search.category.educational", "Educational")));
+            categoryDropdown.options.Add(new TMP_Dropdown.OptionData(LocalizationManager.GetString("search.category.gaming", "Gaming")));
+            categoryDropdown.options.Add(new TMP_Dropdown.OptionData(LocalizationManager.GetString("search.category.other", "Other")));
         }
         
         SwitchSearchType(SearchType.All);
@@ -191,19 +191,19 @@ public class SearchWindow : MonoBehaviour
         switch (currentSearchType)
         {
             case SearchType.People:
-                buttonText.text = "Send IM";
+                buttonText.text = LocalizationManager.GetString("search.action.send_im", "Send IM");
                 break;
             case SearchType.Places:
-                buttonText.text = "Teleport";
+                buttonText.text = LocalizationManager.GetString("search.action.teleport", "Teleport");
                 break;
             case SearchType.Groups:
-                buttonText.text = "Join Group";
+                buttonText.text = LocalizationManager.GetString("search.action.join_group", "Join Group");
                 break;
             case SearchType.Events:
-                buttonText.text = "Teleport";
+                buttonText.text = LocalizationManager.GetString("search.action.teleport", "Teleport");
                 break;
             default:
-                buttonText.text = "Action";
+                buttonText.text = LocalizationManager.GetString("search.action.action", "Action");
                 break;
         }
     }
@@ -452,7 +452,7 @@ public class SearchWindow : MonoBehaviour
         var statusText = resultObj.transform.Find("StatusText")?.GetComponent<TMP_Text>();
         
         if (nameText) nameText.text = result.name;
-        if (statusText) statusText.text = result.online ? "Online" : "Offline";
+        if (statusText) statusText.text = result.online ? LocalizationManager.GetString("search.status.online", "Online") : LocalizationManager.GetString("search.status.offline", "Offline");
     }
 
     void SetupPlaceResult(GameObject resultObj, SearchResult result)
@@ -469,7 +469,7 @@ public class SearchWindow : MonoBehaviour
             if (result.forSale)
                 priceText.text = $"L${result.price}";
             else
-                priceText.text = "Not for sale";
+                priceText.text = LocalizationManager.GetString("search.status.not_for_sale", "Not for sale");
         }
     }
 
@@ -479,7 +479,7 @@ public class SearchWindow : MonoBehaviour
         var memberText = resultObj.transform.Find("MemberText")?.GetComponent<TMP_Text>();
         
         if (nameText) nameText.text = result.name;
-        if (memberText) memberText.text = $"{result.memberCount} members";
+        if (memberText) memberText.text = string.Format(LocalizationManager.GetString("search.status.members", "{0} members"), result.memberCount);
     }
 
     void SetupEventResult(GameObject resultObj, SearchResult result)

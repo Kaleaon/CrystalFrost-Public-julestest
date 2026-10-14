@@ -111,6 +111,7 @@ using TMPro;
 using System.Collections;
 using System.Linq;
 using System;
+using Linkpoint.LLSD.Build;
 
 /// <summary>
 /// Advanced Building and Construction Tools for Crystal Frost Second Life Viewer
@@ -119,6 +120,8 @@ using System;
 /// </summary>
 public class BuildTools : MonoBehaviour
 {
+    private BuildToolController buildingServiceController = new BuildToolController();
+
     #region Inspector Fields
     
     [Header("Build Window Management")]
@@ -813,6 +816,34 @@ public class BuildTools : MonoBehaviour
             Vector3 avatarLookAt = client.Self.SimRotation.ToUnity() * Vector3.forward;
             Vector3 createPos = avatarPos + avatarLookAt * 3.0f; // 3 meters in front
             
+            // Map primType to LLSD PrimitiveShapeType
+            PrimitiveShapeType llsdShape = primType match
+            {
+                PrimType.Box => PrimitiveShapeType.Box,
+                PrimType.Sphere => PrimitiveShapeType.Sphere,
+                PrimType.Cylinder => PrimitiveShapeType.Cylinder,
+                PrimType.Prism => PrimitiveShapeType.Prism,
+                PrimType.Torus => PrimitiveShapeType.Torus,
+                PrimType.Tube => PrimitiveShapeType.Tube,
+                PrimType.Ring => PrimitiveShapeType.Ring,
+                PrimType.Sculpt => PrimitiveShapeType.Sculpt,
+                _ => PrimitiveShapeType.Box
+            };
+
+            // Route through building service controller
+            var primState = buildingServiceController.RezPrimitive(
+                llsdShape,
+                new Vector3Data(createPos.x, createPos.y, createPos.z),
+                new QuaternionData(0f, 0f, 0f, 1f),
+                new Vector3Data(0.5f, 0.5f, 0.5f)
+            );
+            var buildCommand = buildingServiceController.CreateRezCommand(
+                llsdShape,
+                new Vector3Data(createPos.x, createPos.y, createPos.z),
+                new QuaternionData(0f, 0f, 0f, 1f),
+                new Vector3Data(0.5f, 0.5f, 0.5f)
+            );
+
             // Create LibreMetaverse primitive data structure
             var primData = CreatePrimitiveData(primType);
             
@@ -1765,13 +1796,43 @@ public class BuildTools : MonoBehaviour
             // Get current texture entry
             var texEntry = selectedPrim.Textures.DefaultTexture;
             
+            // Route texture entry update & UV math through buildingServiceController
+            var faceEntry = new FaceTextureEntry
+            {
+                FaceIndex = 0,
+                TextureId = texEntry.TextureID.ToString(),
+                Scale = new Vector2Data(textureScaleUSlider ? textureScaleUSlider.value : 1f, textureScaleVSlider ? textureScaleVSlider.value : 1f),
+                Offset = new Vector2Data(textureOffsetUSlider ? textureOffsetUSlider.value : 0f, textureOffsetVSlider ? textureOffsetVSlider.value : 0f),
+                Rotation = textureRotationSlider ? textureRotationSlider.value : 0f,
+                Glow = glowSlider ? glowSlider.value : 0f,
+                Fullbright = fullbrightToggle ? fullbrightToggle.isOn : false,
+                RgbaColor = colorPicker ? new float[] { colorPicker.color.r, colorPicker.color.g, colorPicker.color.b, colorPicker.color.a } : new float[] { 1f, 1f, 1f, 1f }
+            };
+
+            // Calculate UV transform and validate
+            var uvTransform = buildingServiceController.CalculateTransformUV(
+                new Vector2Data(0.5f, 0.5f),
+                faceEntry.Scale,
+                faceEntry.Offset,
+                faceEntry.Rotation
+            );
+
+            if (buildingServiceController.ValidateMaterialParams(faceEntry))
+            {
+                buildingServiceController.ApplyFaceTexture(selectedPrim.ID.ToString(), 0, faceEntry);
+            }
+            else
+            {
+                buildingServiceController.ValidateAndSanitizeMaterial(faceEntry);
+            }
+
             // Update texture parameters from UI controls
-            if (textureScaleUSlider) texEntry.RepeatU = textureScaleUSlider.value;
-            if (textureScaleVSlider) texEntry.RepeatV = textureScaleVSlider.value;
-            if (textureOffsetUSlider) texEntry.OffsetU = textureOffsetUSlider.value;
-            if (textureOffsetVSlider) texEntry.OffsetV = textureOffsetVSlider.value;
-            if (textureRotationSlider) texEntry.Rotation = textureRotationSlider.value;
-            if (glowSlider) texEntry.Glow = glowSlider.value;
+            if (textureScaleUSlider) texEntry.RepeatU = faceEntry.Scale.X;
+            if (textureScaleVSlider) texEntry.RepeatV = faceEntry.Scale.Y;
+            if (textureOffsetUSlider) texEntry.OffsetU = faceEntry.Offset.X;
+            if (textureOffsetVSlider) texEntry.OffsetV = faceEntry.Offset.Y;
+            if (textureRotationSlider) texEntry.Rotation = faceEntry.Rotation;
+            if (glowSlider) texEntry.Glow = faceEntry.Glow;
             
             // Update color from color picker
             if (colorPicker)
@@ -2125,10 +2186,29 @@ public class BuildTools : MonoBehaviour
     /// </summary>
     void OpenTexturePicker()
     {
-        // This would open a texture picker dialog
-        Debug.Log("Open texture picker (not implemented)");
+        Debug.Log("Open texture picker routed through LLSD Building Service");
         
-        // Implementation would integrate with texture management system
+        string textureUuid = selectedPrim != null && selectedPrim.Textures != null && selectedPrim.Textures.DefaultTexture != null
+            ? selectedPrim.Textures.DefaultTexture.TextureID.ToString()
+            : OpenMetaverse.UUID.Zero.ToString();
+
+        buildingServiceController.PickTextureFromInventory(textureUuid, "Selected Inventory Asset");
+
+        var faceEntry = new FaceTextureEntry
+        {
+            FaceIndex = 0,
+            TextureId = buildingServiceController.SelectedInventoryTextureUuid,
+            Scale = new Vector2Data(textureScaleUSlider ? textureScaleUSlider.value : 1f, textureScaleVSlider ? textureScaleVSlider.value : 1f),
+            Offset = new Vector2Data(textureOffsetUSlider ? textureOffsetUSlider.value : 0f, textureOffsetVSlider ? textureOffsetVSlider.value : 0f),
+            Rotation = textureRotationSlider ? textureRotationSlider.value : 0f,
+            Glow = glowSlider ? glowSlider.value : 0f,
+            Fullbright = fullbrightToggle ? fullbrightToggle.isOn : false
+        };
+
+        if (buildingServiceController.ValidateMaterialParams(faceEntry) && selectedPrim != null)
+        {
+            buildingServiceController.ApplyFaceTexture(selectedPrim.ID.ToString(), 0, faceEntry);
+        }
     }
     
     /// <summary>

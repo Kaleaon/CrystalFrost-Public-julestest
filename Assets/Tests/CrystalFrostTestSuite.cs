@@ -345,4 +345,41 @@ namespace CrystalFrost.Tests
             logger.LogInformation($"Garbage collection test passed: {memoryIncrease / 1024 / 1024}MB increase for {numRequests} requests");
         }
     }
+
+    /// <summary>
+    /// Test suite for LocalizationManager functionality
+    /// </summary>
+    public class LocalizationManagerTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            LocalizationManager.SetLanguage("en");
+        }
+
+        [Test]
+        public void LocalizationManager_ValidKey_ShouldReturnTranslation()
+        {
+            string value = LocalizationManager.GetString("search.action.send_im");
+            Assert.AreEqual("Send IM", value);
+        }
+
+        [Test]
+        public void LocalizationManager_SpanishLanguage_ShouldReturnSpanishTranslation()
+        {
+            LocalizationManager.SetLanguage("es");
+            string value = LocalizationManager.GetString("search.action.send_im");
+            Assert.AreEqual("Enviar MI", value);
+        }
+
+        [Test]
+        public void LocalizationManager_MissingKey_ShouldReturnFallbackOrKey()
+        {
+            string fallbackValue = LocalizationManager.GetString("non.existent.key", "Default Fallback");
+            Assert.AreEqual("Default Fallback", fallbackValue);
+
+            string keyValue = LocalizationManager.GetString("non.existent.key");
+            Assert.AreEqual("non.existent.key", keyValue);
+        }
+    }
 }

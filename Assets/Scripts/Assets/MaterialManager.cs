@@ -64,8 +64,8 @@ namespace CrystalFrost.Assets
         {
             try
             {
-                // Create default zero material
-                ZeroMaterial = new Material(Shader.Find("Standard"));
+                Shader shader = Shader.Find("Standard") ?? Shader.Find("Diffuse");
+                ZeroMaterial = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
                 ZeroMaterial.name = "ZeroMaterial";
                 ZeroMaterial.color = Color.white;
 
@@ -124,7 +124,10 @@ namespace CrystalFrost.Assets
                 // Create or update material container
                 MaterialContainer container = _materialContainers.GetOrAdd(textureUuid, _ => new MaterialContainer());
                 container.Material = material;
-                container.Renderers.Add(renderer);
+                if (renderer != null && !container.Renderers.Contains(renderer))
+                {
+                    container.Renderers.Add(renderer);
+                }
 
                 ApplyMaterialToRenderer(renderer, subMeshIndex, material);
 
@@ -144,6 +147,11 @@ namespace CrystalFrost.Assets
 
         private Material CreateMaterial(UUID textureUuid, Color color, float glow, bool fullbright)
         {
+            if (color == default)
+            {
+                color = Color.white;
+            }
+
             // Get base shader name from ClientManager settings
             string shaderName = "Standard";
             
@@ -151,7 +159,8 @@ namespace CrystalFrost.Assets
             shaderName = "MK/Glow/Standard";
 #endif
 
-            Material material = new Material(Shader.Find(shaderName));
+            Shader shader = Shader.Find(shaderName) ?? Shader.Find("Diffuse");
+            Material material = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
             material.name = $"{_clientManagerService.MaterialNameModifier}{textureUuid}";
 
             // Get texture from TextureManager
@@ -185,6 +194,7 @@ namespace CrystalFrost.Assets
 
         private void AddRendererToMaterial(UUID textureUuid, Renderer renderer)
         {
+            if (renderer == null) return;
             if (_materialContainers.TryGetValue(textureUuid, out MaterialContainer container))
             {
                 if (!container.Renderers.Contains(renderer))

@@ -202,6 +202,12 @@ public class LSLScriptEditor : MonoBehaviour
     /// <summary>Flag indicating if compilation is in progress</summary>
     private bool isCompiling = false;
     
+    /// <summary>Flag to prevent recursive UI change callbacks during syntax highlighting</summary>
+    private bool isUpdatingUI = false;
+
+    /// <summary>Active compilation coroutine reference for cancellation on error</summary>
+    private Coroutine activeCompileCoroutine = null;
+    
     #endregion
     
     #region Data Classes
@@ -297,6 +303,11 @@ public class LSLScriptEditor : MonoBehaviour
         if (client != null)
         {
             client.Inventory.ScriptRunningReply += OnScriptRunningReply;
+            if (client.Self != null)
+            {
+                client.Self.AlertMessage += OnAlertMessage;
+                client.Self.ChatFromSimulator += OnChatFromSimulator;
+            }
         }
 
         // Load existing script library from disk
@@ -309,11 +320,14 @@ public class LSLScriptEditor : MonoBehaviour
     /// </summary>
     void OnDestroy()
     {
-        // Note: LSLScriptEditor doesn't subscribe to external events
-        // but this method is included for consistency and future expansion
         if (client != null)
         {
             client.Inventory.ScriptRunningReply -= OnScriptRunningReply;
+            if (client.Self != null)
+            {
+                client.Self.AlertMessage -= OnAlertMessage;
+                client.Self.ChatFromSimulator -= OnChatFromSimulator;
+            }
         }
         
         // Save any unsaved changes before destruction
@@ -576,9 +590,25 @@ public class LSLScriptEditor : MonoBehaviour
     /// <param name="script">Script to display</param>
     void DisplayScript(ScriptData script)
     {
-        if (scriptEditor) scriptEditor.text = script.content;
+        if (script == null) return;
+
+        script.content = StripRichTextTags(script.content);
+
+        isUpdatingUI = true;
+        if (scriptEditor != null)
+        {
+            scriptEditor.onValueChanged.RemoveListener(OnScriptContentChanged);
+            scriptEditor.text = script.content;
+        }
+
         UpdateLineNumbers();
         ApplySyntaxHighlighting();
+
+        if (scriptEditor != null)
+        {
+            scriptEditor.onValueChanged.AddListener(OnScriptContentChanged);
+        }
+        isUpdatingUI = false;
     }
     
     /// <summary>
@@ -692,15 +722,28 @@ public class LSLScriptEditor : MonoBehaviour
     #region Editor Features
     
     /// <summary>
+    /// Utility to strip rich text formatting tags from LSL source code
+    /// </summary>
+    public static string StripRichTextTags(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        return Regex.Replace(text, @"</?color[^>]*>", "", RegexOptions.IgnoreCase);
+    }
+
+    /// <summary>
     /// Handle script content changes in real-time
     /// Updates line numbers, syntax highlighting, and modification status
     /// </summary>
     /// <param name="content">New script content</param>
     void OnScriptContentChanged(string content)
     {
+        if (isUpdatingUI) return;
+
         if (currentScript != null)
         {
-            currentScript.content = content;
+            // Decouple model from view: store clean raw text in data model
+            string rawContent = StripRichTextTags(content);
+            currentScript.content = rawContent;
             currentScript.isModified = true;
             currentScript.lastModified = System.DateTime.Now;
             
@@ -761,19 +804,31 @@ public class LSLScriptEditor : MonoBehaviour
     /// </summary>
     void ApplySyntaxHighlighting()
     {
-        if (scriptEditor == null) return;
-        
-        string content = scriptEditor.text;
-        
-        // Apply highlighting (simplified implementation)
-        // In production, this would use a more sophisticated syntax highlighter
-        content = HighlightKeywords(content);
-        content = HighlightFunctions(content);
-        content = HighlightComments(content);
-        content = HighlightStrings(content);
-        
-        // Note: TMP_InputField has limited rich text support
-        // A full implementation might use a custom text component
+        if (scriptEditor == null || currentScript == null) return;
+
+        isUpdatingUI = true;
+        if (scriptEditor != null)
+        {
+            scriptEditor.onValueChanged.RemoveListener(OnScriptContentChanged);
+        }
+
+        // Clean raw content in model
+        string rawContent = StripRichTextTags(currentScript.content);
+        currentScript.content = rawContent;
+
+        // Apply highlighting for view display
+        string highlighted = HighlightKeywords(rawContent);
+        highlighted = HighlightFunctions(highlighted);
+        highlighted = HighlightComments(highlighted);
+        highlighted = HighlightStrings(highlighted);
+
+        scriptEditor.text = highlighted;
+
+        if (scriptEditor != null)
+        {
+            scriptEditor.onValueChanged.AddListener(OnScriptContentChanged);
+        }
+        isUpdatingUI = false;
     }
     
     /// <summary>
@@ -1019,34 +1074,39 @@ public class LSLScriptEditor : MonoBehaviour
     {
         if (currentScript == null || isCompiling) return;
         
+        currentScript.content = StripRichTextTags(currentScript.content);
         isCompiling = true;
         if (statusText) statusText.text = "Compiling...";
         if (errorText) errorText.text = "";
         
-        // Perform basic syntax validation
+        // Perform AST syntax validation via LibreMetaverse.LslTools
         List<ScriptError> errors = ValidateScript(currentScript.content);
         currentScript.errors = errors;
 
+        bool hasFatalErrors = errors.Any(e => e.type == ErrorType.Error);
         if (errors.Count > 0)
         {
-             if (statusText) statusText.text = $"Pre-compilation warnings: {errors.Count}";
+             if (statusText) statusText.text = hasFatalErrors ? "Local syntax error" : $"Pre-compilation warnings: {errors.Count}";
              DisplayErrors(errors);
-             // Continue to server compilation even if local validation finds issues
+             if (hasFatalErrors)
+             {
+                 isCompiling = false;
+                 return;
+             }
         }
 
-        StartCoroutine(UploadAndCompileCoroutine());
+        activeCompileCoroutine = StartCoroutine(UploadAndCompileCoroutine());
     }
 
     System.Collections.IEnumerator UploadAndCompileCoroutine()
     {
         // Create or update in inventory
-        yield return null; // Ensure we are on main thread if needed, though LMV is thread safeish
+        yield return null; // Ensure we are on main thread if needed
         
         if (currentScript.itemID == UUID.Zero)
         {
              // Create new item
              if (statusText) statusText.text = "Creating inventory item...";
-             // We need a folder. Use "Scripts" folder or Root.
              UUID folder = client.Inventory.FindFolderForType(FolderType.Script);
              if (folder == UUID.Zero) folder = client.Inventory.Store.RootFolder.UUID;
 
@@ -1056,7 +1116,7 @@ public class LSLScriptEditor : MonoBehaviour
                     if (success)
                     {
                         currentScript.itemID = item.UUID;
-                        currentScript.scriptID = item.AssetUUID; // Temporarily until upload
+                        currentScript.scriptID = item.AssetUUID;
                     }
                     else
                     {
@@ -1072,100 +1132,179 @@ public class LSLScriptEditor : MonoBehaviour
              {
                  if (statusText) statusText.text = "Failed to create inventory item";
                  isCompiling = false;
+                 activeCompileCoroutine = null;
                  yield break;
              }
         }
 
-        // Now update the script content
+        // Now update the script content using clean raw model content
         if (statusText) statusText.text = "Uploading script...";
         
-        // This triggers compilation on the server
-        client.Inventory.RequestUpdateScriptAgent(currentScript.itemID, System.Text.Encoding.UTF8.GetBytes(currentScript.content));
+        byte[] scriptBytes = System.Text.Encoding.UTF8.GetBytes(StripRichTextTags(currentScript.content));
+        client.Inventory.RequestUpdateScriptAgent(currentScript.itemID, scriptBytes);
         
-        // We wait for ScriptRunningReply via event handler
-        // isCompiling will be reset there or timeout
         yield return new WaitForSeconds(5.0f);
         if (isCompiling)
         {
              if (statusText) statusText.text = "Compilation timed out (no reply)";
              isCompiling = false;
+             activeCompileCoroutine = null;
         }
     }
 
     void OnScriptRunningReply(object sender, ScriptRunningReplyEventArgs e)
     {
-        if (!isCompiling) return; // Ignore if we aren't compiling
-        if (e.ItemID != currentScript.itemID) return; // Not our script
+        if (!isCompiling) return;
+        if (e.ItemID != currentScript.itemID) return;
 
         isCompiling = false;
-        
+        activeCompileCoroutine = null;
+
         UnityMainThreadDispatcher.Instance().Enqueue(() => {
-            if (e.IsMono) // Successful compilation usually implies running or mono status
+            if (e.IsMono)
             {
                  if (statusText) statusText.text = "Compilation Successful!";
                  if (errorText) errorText.text = "No errors.";
             }
-            // Note: Compilation errors usually come as AlertMessages or ScriptCompileError, 
-            // but ScriptRunningReply indicates success/running state.
-            // If failed, we might not get this, or get Mono=false?
-            // Actually LMV handles ScriptCompileError separately?
-            // We should also subscribe to that if possible, but GridClient doesn't seem to expose ScriptCompileError event directly on Inventory?
-            // It might be on Assets or just generic Alert.
-            // For now, assume success if we get a reply.
+            else
+            {
+                 if (statusText) statusText.text = "Compilation Failed";
+                 if (errorText) errorText.text = "Script compile failed on server.";
+            }
         });
     }
 
     /// <summary>
-    /// Asynchronous script compilation process
-    /// Simulates compilation time and performs validation
+    /// Event handler for simulator AlertMessage network dispatches
+    /// Intercepts server-side compilation error alerts
     /// </summary>
-    /// <returns>Coroutine enumerator</returns>
-    System.Collections.IEnumerator CompileScriptCoroutine()
+    void OnAlertMessage(object sender, AlertMessageEventArgs e)
     {
-        yield break; 
+        if (!isCompiling || string.IsNullOrEmpty(e.Message)) return;
+
+        string msg = e.Message;
+        if (msg.IndexOf("compile", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+            msg.IndexOf("error", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+            msg.IndexOf("failed", System.StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            HandleServerCompilationError(msg);
+        }
     }
-    
+
     /// <summary>
-    /// Validate script syntax and structure
-    /// Performs basic LSL syntax checking
+    /// Event handler for ChatFromSimulator network dispatches
+    /// Intercepts simulator compilation diagnostic messages
+    /// </summary>
+    void OnChatFromSimulator(object sender, ChatEventArgs e)
+    {
+        if (!isCompiling || string.IsNullOrEmpty(e.Message)) return;
+
+        string msg = e.Message;
+        if (msg.IndexOf("compile error", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+            msg.IndexOf("error(s) compile", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+            (msg.IndexOf("error", System.StringComparison.OrdinalIgnoreCase) >= 0 && msg.IndexOf("line", System.StringComparison.OrdinalIgnoreCase) >= 0))
+        {
+            HandleServerCompilationError(msg);
+        }
+    }
+
+    /// <summary>
+    /// Processes server compilation errors, cancelling active wait state and updating UI
+    /// </summary>
+    private void HandleServerCompilationError(string errorMessage)
+    {
+        isCompiling = false;
+
+        if (activeCompileCoroutine != null)
+        {
+            StopCoroutine(activeCompileCoroutine);
+            activeCompileCoroutine = null;
+        }
+
+        UnityMainThreadDispatcher.Instance().Enqueue(() => {
+            if (statusText) statusText.text = "Compilation Failed";
+            if (errorText) errorText.text = errorMessage;
+        });
+    }
+
+    /// <summary>
+    /// Validate script syntax and structure using LibreMetaverse.LslTools AST parser.
+    /// Performs local LSL syntax checking with line and column error details.
     /// </summary>
     /// <param name="content">Script content to validate</param>
     /// <returns>List of found errors</returns>
     List<ScriptError> ValidateScript(string content)
     {
         var errors = new List<ScriptError>();
-        string[] lines = content.Split('\n');
-        
-        for (int i = 0; i < lines.Length; i++)
+        if (string.IsNullOrEmpty(content)) return errors;
+
+        string cleanContent = StripRichTextTags(content);
+        string tempFilePath = Path.Combine(Application.temporaryCachePath, $"lsl_validate_{System.Guid.NewGuid()}.lsl");
+
+        try
         {
-            string line = lines[i].Trim();
-            
-            // Basic syntax validation rules
-            if (line.Contains("llSay") && !line.Contains(";"))
+            File.WriteAllText(tempFilePath, cleanContent);
+
+            YYClass.cs0syntax parser = new YYClass.cs0syntax();
+            if (parser.m_symbols != null && parser.m_lexer != null)
             {
-                errors.Add(new ScriptError
+                parser.m_symbols.GetParser(parser.m_lexer);
+                if (parser.m_lexer.tokens != null)
                 {
-                    line = i + 1,
-                    message = "Missing semicolon",
-                    type = ErrorType.Error
-                });
+                    parser.m_lexer.tokens.GetDfa();
+                }
             }
-            
-            // Check for unmatched braces (simplified check)
-            int openBraces = line.Count(c => c == '{');
-            int closeBraces = line.Count(c => c == '}');
-            
-            if (openBraces != closeBraces && line.Contains("{") && line.Contains("}"))
+
+            LibreMetaverse.LslTools.CsReader reader = new LibreMetaverse.LslTools.CsReader(tempFilePath);
+            LibreMetaverse.LslTools.SYMBOL ast = parser.Parse(reader);
+
+            if (parser.m_lexer != null && parser.m_lexer.tokens != null && parser.m_lexer.tokens.erh != null)
             {
-                errors.Add(new ScriptError
+                if (parser.m_lexer.tokens.erh.counter > 0)
                 {
-                    line = i + 1,
-                    message = "Unmatched braces",
-                    type = ErrorType.Warning
-                });
+                    errors.Add(new ScriptError
+                    {
+                        line = 1,
+                        column = 1,
+                        message = $"LslTools reported {parser.m_lexer.tokens.erh.counter} syntax issue(s)",
+                        type = ErrorType.Warning
+                    });
+                }
             }
         }
-        
+        catch (LibreMetaverse.LslTools.CSToolsException ex)
+        {
+            int line = (ex.slInfo != null && ex.slInfo.lineNumber > 0) ? ex.slInfo.lineNumber : 1;
+            int col = (ex.slInfo != null && ex.slInfo.charPosition > 0) ? ex.slInfo.charPosition : 1;
+            string msg = !string.IsNullOrEmpty(ex.sInput) ? ex.sInput : ex.Message;
+
+            errors.Add(new ScriptError
+            {
+                line = line,
+                column = col,
+                message = msg,
+                type = ErrorType.Error
+            });
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"LslTools validation warning: {ex.Message}");
+            errors.Add(new ScriptError
+            {
+                line = 1,
+                column = 1,
+                message = $"Validation warning: {ex.Message}",
+                type = ErrorType.Warning
+            });
+        }
+        finally
+        {
+            if (File.Exists(tempFilePath))
+            {
+                try { File.Delete(tempFilePath); } catch { }
+            }
+        }
+
         return errors;
     }
     
@@ -1181,7 +1320,7 @@ public class LSLScriptEditor : MonoBehaviour
         string errorDisplay = "";
         foreach (var error in errors)
         {
-            errorDisplay += $"Line {error.line}: {error.message}\n";
+            errorDisplay += $"Line {error.line}, Col {error.column}: {error.message}\n";
         }
         
         errorText.text = errorDisplay;

@@ -85,6 +85,56 @@ namespace CrystalFrost.Tests
         }
 
         [Test]
+        public void MaterialManager_QueueMaterialBinding_ShouldEnqueueAndProcessOnMainThread()
+        {
+            var cfAssetManager = new CFAssetManager();
+            var gameObject = new GameObject("TestRendererObject");
+            var renderer = gameObject.AddComponent<MeshRenderer>();
+            UUID textureId = UUID.Random();
+
+            try
+            {
+                cfAssetManager.RequestTexture(textureId, renderer, 0, Color.red, 0f, false);
+
+                Assert.AreEqual(1, cfAssetManager.MaterialBindingQueue.Count, "Material request should be enqueued into MaterialBindingQueue");
+
+                int processed = cfAssetManager.ProcessMaterialQueue(10.0f);
+                Assert.AreEqual(1, processed, "One request should be processed");
+                Assert.AreEqual(0, cfAssetManager.MaterialBindingQueue.Count, "MaterialBindingQueue should be empty after processing");
+
+                Assert.IsNotNull(renderer.sharedMaterials[0], "Material should be assigned via sharedMaterials");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(gameObject);
+                cfAssetManager.Dispose();
+            }
+        }
+
+        [Test]
+        public void MaterialManager_PerformMaintenance_ShouldProcessQueueAndCleanupWithoutGCCollect()
+        {
+            var cfAssetManager = new CFAssetManager();
+            var gameObject = new GameObject("TestMaintenanceObject");
+            var renderer = gameObject.AddComponent<MeshRenderer>();
+            UUID textureId = UUID.Random();
+
+            try
+            {
+                cfAssetManager.RequestTexture(textureId, renderer, 0, Color.blue, 0.5f, false);
+                Assert.AreEqual(1, cfAssetManager.MaterialBindingQueue.Count);
+
+                Assert.DoesNotThrow(() => cfAssetManager.PerformMaintenance());
+                Assert.AreEqual(0, cfAssetManager.MaterialBindingQueue.Count, "PerformMaintenance should process queued requests");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(gameObject);
+                cfAssetManager.Dispose();
+            }
+        }
+
+        [Test]
         public void AssetManager_ConcurrentAccess_ShouldBeThreadSafe()
         {
             // Test thread safety with concurrent requests
@@ -343,6 +393,97 @@ namespace CrystalFrost.Tests
                 $"Memory increase should be reasonable, increased by {memoryIncrease / 1024 / 1024}MB");
             
             logger.LogInformation($"Garbage collection test passed: {memoryIncrease / 1024 / 1024}MB increase for {numRequests} requests");
+        }
+    }
+
+    /// <summary>
+    /// Test suite for MeshManager state machine and procedural fallbacks
+    /// </summary>
+    public class MeshManagerLifecycleTests
+    {
+        private ILogger<MeshManager> _logger;
+        private IClientManagerService _clientManager;
+        private MeshManager _meshManager;
+
+        [SetUp]
+        public void Setup()
+        {
+            _logger = Services.GetService<ILogger<MeshManager>>();
+            _clientManager = ClientManager.GetService();
+            _meshManager = new MeshManager(_logger, _clientManager);
+        }
+
+        [Test]
+        public void RequestMesh_ImmediatelyAssignsPlaceholderWireframeAndPendingState()
+        {
+            var go = new GameObject("TestMeshObject");
+            var prim = new Primitive { Scale = new Vector3(2f, 2f, 2f) };
+            UUID meshUuid = UUID.Random();
+
+            _meshManager.RequestMesh(go, prim, meshUuid, null);
+
+            var state = _meshManager.GetRequestState(go, meshUuid);
+            Assert.AreEqual(MeshRequestState.Pending, state, "Initial request state should be Pending");
+
+            var meshFilter = go.GetComponent<MeshFilter>();
+            Assert.IsNotNull(meshFilter, "MeshFilter should be attached immediately");
+            Assert.IsNotNull(meshFilter.sharedMesh, "Placeholder wireframe mesh should be assigned immediately");
+            Assert.AreEqual("PlaceholderWireframeMesh", meshFilter.sharedMesh.name);
+
+            Object.DestroyImmediate(go);
+        }
+
+        [Test]
+        public void RequestSculpt_ImmediatelyAssignsPlaceholderWireframeAndPendingState()
+        {
+            var go = new GameObject("TestSculptObject");
+            var prim = new Primitive
+            {
+                Scale = new Vector3(1f, 1f, 1f),
+                Sculpt = new Primitive.SculptData { SculptTexture = UUID.Random(), Type = SculptType.Sphere }
+            };
+
+            _meshManager.RequestSculpt(go, prim);
+
+            var state = _meshManager.GetRequestState(go, prim.Sculpt.SculptTexture);
+            Assert.AreEqual(MeshRequestState.Pending, state, "Initial sculpt request state should be Pending");
+
+            var meshFilter = go.GetComponent<MeshFilter>();
+            Assert.IsNotNull(meshFilter, "MeshFilter should be attached immediately");
+            Assert.IsNotNull(meshFilter.sharedMesh, "Placeholder wireframe mesh should be assigned immediately");
+
+            Object.DestroyImmediate(go);
+        }
+
+        [Test]
+        public void RequestSculpt_UnsupportedType_RendersFallbackPrimitiveBox()
+        {
+            var go = new GameObject("TestNonSphereSculptObject");
+            var prim = new Primitive
+            {
+                Scale = new Vector3(3f, 4f, 5f),
+                Sculpt = new Primitive.SculptData { SculptTexture = UUID.Random(), Type = SculptType.Cylinder }
+            };
+
+            _meshManager.RequestSculpt(go, prim);
+
+            var state = _meshManager.GetRequestState(go, prim.Sculpt.SculptTexture);
+            Assert.AreEqual(MeshRequestState.Failed, state, "Unsupported sculpt type request state should be Failed");
+
+            var meshFilter = go.GetComponent<MeshFilter>();
+            Assert.IsNotNull(meshFilter, "MeshFilter should be present");
+            Assert.IsNotNull(meshFilter.sharedMesh, "Fallback primitive box mesh should be assigned");
+            Assert.AreEqual("FallbackBoxMesh", meshFilter.sharedMesh.name);
+
+            Assert.AreEqual(new Vector3(3f, 4f, 5f), go.transform.localScale, "Transform scale should correspond to primitive bounds");
+
+            Object.DestroyImmediate(go);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _meshManager?.Dispose();
         }
     }
 }

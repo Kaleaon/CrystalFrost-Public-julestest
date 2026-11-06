@@ -773,6 +773,7 @@ public class SimManager : MonoBehaviour, IDisposable
 
 		ServiceReadyMeshQueue();
 		ServiceReadyAnimationQueue();
+		ClientManager.assetManager?.ProcessMaterialQueue();
 		AllTextureRequests();
 		if (!_config.UseNewObjectGraph)
 		{
@@ -1913,7 +1914,7 @@ public class SimManager : MonoBehaviour, IDisposable
 			materials.Add(clonemat);
 		}
 
-		rendr.materials = materials.ToArray();
+		rendr.sharedMaterials = materials.ToArray();
 
 		Mesh mesh = new Mesh();
 		mesh.SetVertices(allVertices);

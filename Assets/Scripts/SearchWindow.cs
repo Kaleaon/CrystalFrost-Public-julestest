@@ -30,6 +30,7 @@ public class SearchWindow : MonoBehaviour
     public GameObject placeResultPrefab;
     public GameObject groupResultPrefab;
     public GameObject eventResultPrefab;
+    public GameObject skeletonResultPrefab;
     public ScrollRect resultsScrollRect;
     
     [Header("Pagination")]
@@ -208,6 +209,27 @@ public class SearchWindow : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Displays skeleton result item prefabs in resultsRoot during active search processing
+    /// </summary>
+    void DisplaySkeletons()
+    {
+        if (resultsRoot == null) return;
+
+        ClearResultsDisplay();
+
+        int skeletonCount = resultsPerPage > 0 ? Mathf.Min(resultsPerPage, 5) : 5;
+        GameObject prefabToInstantiate = skeletonResultPrefab != null ? skeletonResultPrefab : GetResultPrefab(currentSearchType);
+
+        if (prefabToInstantiate != null)
+        {
+            for (int i = 0; i < skeletonCount; i++)
+            {
+                Instantiate(prefabToInstantiate, resultsRoot);
+            }
+        }
+    }
+
     void PerformSearch()
     {
         if (searchField == null || string.IsNullOrEmpty(searchField.text)) return;
@@ -215,6 +237,7 @@ public class SearchWindow : MonoBehaviour
         string searchTerm = searchField.text.Trim();
         currentPage = 0;
         ClearResults();
+        DisplaySkeletons();
         
         switch (currentSearchType)
         {

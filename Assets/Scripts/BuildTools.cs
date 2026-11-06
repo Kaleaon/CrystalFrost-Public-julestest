@@ -107,6 +107,7 @@ using OpenMetaverse;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using TMPro;
 using System.Collections;
 using System.Linq;
@@ -379,6 +380,22 @@ public class BuildTools : MonoBehaviour
     }
     
     /// <summary>
+    /// Serializable shape parameter snapshot for Undo/Redo tracking
+    /// </summary>
+    [System.Serializable]
+    public class ShapeParametersData
+    {
+        public float pathBegin;
+        public float pathEnd;
+        public float profileHollow;
+        public float pathTwist;
+        public float pathTaperX;
+        public float pathTaperY;
+        public float pathShearX;
+        public float pathShearY;
+    }
+
+    /// <summary>
     /// Build operation data for undo/redo functionality
     /// Stores complete state information for operation reversal
     /// </summary>
@@ -404,6 +421,10 @@ public class BuildTools : MonoBehaviour
         public Quaternion previousRotation;     // Previous rotation (for rotation)
         public Vector3 previousScale;           // Previous scale (for scaling)
         public string previousProperties;       // Previous properties (serialized)
+        public Vector3 nextPosition;            // Next position (for redo)
+        public Quaternion nextRotation;         // Next rotation (for redo)
+        public Vector3 nextScale;               // Next scale (for redo)
+        public string nextProperties;           // Next properties (serialized)
         public DateTime timestamp;              // When operation was performed
     }
     
@@ -529,11 +550,58 @@ public class BuildTools : MonoBehaviour
     }
     
     /// <summary>
+    /// Helper to register pointer down and select events on UI controls to trigger undo snapshot
+    /// </summary>
+    private void RegisterControlStartEdit(Selectable control, BuildOperation.OperationType opType)
+    {
+        if (control == null) return;
+        var trigger = control.gameObject.GetComponent<EventTrigger>();
+        if (trigger == null) trigger = control.gameObject.AddComponent<EventTrigger>();
+
+        var entryDown = new EventTrigger.Entry { eventID = EventTriggerType.PointerDown };
+        entryDown.callback.AddListener((data) => OnControlStartEdit(opType));
+        trigger.triggers.Add(entryDown);
+
+        var entrySelect = new EventTrigger.Entry { eventID = EventTriggerType.Select };
+        entrySelect.callback.AddListener((data) => OnControlStartEdit(opType));
+        trigger.triggers.Add(entrySelect);
+    }
+
+    private void OnControlStartEdit(BuildOperation.OperationType opType)
+    {
+        if (selectedObject == null) return;
+        RecordObjectState(selectedObject);
+        RecordBuildOperation(opType, selectedObject, null);
+    }
+
+    /// <summary>
     /// Setup parameter control sliders with event handlers
     /// Connects all shape and transformation parameter controls
     /// </summary>
     void SetupParameterControls()
     {
+        // Register undo snapshot listeners for transform and shape sliders
+        RegisterControlStartEdit(posXSlider, BuildOperation.OperationType.Move);
+        RegisterControlStartEdit(posYSlider, BuildOperation.OperationType.Move);
+        RegisterControlStartEdit(posZSlider, BuildOperation.OperationType.Move);
+
+        RegisterControlStartEdit(rotXSlider, BuildOperation.OperationType.Rotate);
+        RegisterControlStartEdit(rotYSlider, BuildOperation.OperationType.Rotate);
+        RegisterControlStartEdit(rotZSlider, BuildOperation.OperationType.Rotate);
+
+        RegisterControlStartEdit(scaleXSlider, BuildOperation.OperationType.Scale);
+        RegisterControlStartEdit(scaleYSlider, BuildOperation.OperationType.Scale);
+        RegisterControlStartEdit(scaleZSlider, BuildOperation.OperationType.Scale);
+
+        RegisterControlStartEdit(pathCutBeginSlider, BuildOperation.OperationType.Modify);
+        RegisterControlStartEdit(pathCutEndSlider, BuildOperation.OperationType.Modify);
+        RegisterControlStartEdit(hollowSlider, BuildOperation.OperationType.Modify);
+        RegisterControlStartEdit(twistSlider, BuildOperation.OperationType.Modify);
+        RegisterControlStartEdit(taperXSlider, BuildOperation.OperationType.Modify);
+        RegisterControlStartEdit(taperYSlider, BuildOperation.OperationType.Modify);
+        RegisterControlStartEdit(shearXSlider, BuildOperation.OperationType.Modify);
+        RegisterControlStartEdit(shearYSlider, BuildOperation.OperationType.Modify);
+
         // Position control sliders
         if (posXSlider) posXSlider.onValueChanged.AddListener(OnPositionXChanged);
         if (posYSlider) posYSlider.onValueChanged.AddListener(OnPositionYChanged);
@@ -581,6 +649,18 @@ public class BuildTools : MonoBehaviour
     /// </summary>
     void SetupInputFieldSync()
     {
+        RegisterControlStartEdit(posXField, BuildOperation.OperationType.Move);
+        RegisterControlStartEdit(posYField, BuildOperation.OperationType.Move);
+        RegisterControlStartEdit(posZField, BuildOperation.OperationType.Move);
+
+        RegisterControlStartEdit(rotXField, BuildOperation.OperationType.Rotate);
+        RegisterControlStartEdit(rotYField, BuildOperation.OperationType.Rotate);
+        RegisterControlStartEdit(rotZField, BuildOperation.OperationType.Rotate);
+
+        RegisterControlStartEdit(scaleXField, BuildOperation.OperationType.Scale);
+        RegisterControlStartEdit(scaleYField, BuildOperation.OperationType.Scale);
+        RegisterControlStartEdit(scaleZField, BuildOperation.OperationType.Scale);
+
         // Position field synchronization
         if (posXField && posXSlider)
         {
@@ -2159,20 +2239,37 @@ public class BuildTools : MonoBehaviour
     /// <param name="affectedObjects">All objects affected</param>
     void RecordBuildOperation(BuildOperation.OperationType type, GameObject targetObject, List<GameObject> affectedObjects)
     {
+        GameObject target = targetObject != null ? targetObject : selectedObject;
         var operation = new BuildOperation
         {
             type = type,
-            targetObject = targetObject,
+            targetObject = target,
             affectedObjects = affectedObjects ?? new List<GameObject>(),
             timestamp = DateTime.Now
         };
         
         // Store previous state if applicable
-        if (targetObject != null)
+        if (target != null)
         {
-            operation.previousPosition = targetObject.transform.position;
-            operation.previousRotation = targetObject.transform.rotation;
-            operation.previousScale = targetObject.transform.localScale;
+            operation.previousPosition = target.transform.position;
+            operation.previousRotation = target.transform.rotation;
+            operation.previousScale = target.transform.localScale;
+            
+            if (selectedPrim != null && selectedPrim.PrimData != null)
+            {
+                var shapeData = new ShapeParametersData
+                {
+                    pathBegin = selectedPrim.PrimData.PathBegin,
+                    pathEnd = selectedPrim.PrimData.PathEnd,
+                    profileHollow = selectedPrim.PrimData.ProfileHollow,
+                    pathTwist = selectedPrim.PrimData.PathTwist,
+                    pathTaperX = selectedPrim.PrimData.PathTaperX,
+                    pathTaperY = selectedPrim.PrimData.PathTaperY,
+                    pathShearX = selectedPrim.PrimData.PathShearX,
+                    pathShearY = selectedPrim.PrimData.PathShearY
+                };
+                operation.previousProperties = JsonUtility.ToJson(shapeData);
+            }
         }
         
         // Add to undo stack
@@ -2207,9 +2304,26 @@ public class BuildTools : MonoBehaviour
     /// <param name="obj">Object to record state for</param>
     void RecordObjectState(GameObject obj)
     {
-        // This would store detailed object state for undo
-        // Implementation depends on what properties need to be tracked
+        if (obj == null) return;
+        if (selectedObject == null) selectedObject = obj;
+        if (selectedPrim != null && selectedPrim.PrimData != null)
+        {
+            var shapeData = new ShapeParametersData
+            {
+                pathBegin = selectedPrim.PrimData.PathBegin,
+                pathEnd = selectedPrim.PrimData.PathEnd,
+                profileHollow = selectedPrim.PrimData.ProfileHollow,
+                pathTwist = selectedPrim.PrimData.PathTwist,
+                pathTaperX = selectedPrim.PrimData.PathTaperX,
+                pathTaperY = selectedPrim.PrimData.PathTaperY,
+                pathShearX = selectedPrim.PrimData.PathShearX,
+                pathShearY = selectedPrim.PrimData.PathShearY
+            };
+            lastRecordedShapeJson = JsonUtility.ToJson(shapeData);
+        }
     }
+
+    private string lastRecordedShapeJson;
     
     /// <summary>
     /// Undo the last build operation
@@ -2224,6 +2338,31 @@ public class BuildTools : MonoBehaviour
         }
         
         var operation = undoStack.Pop();
+        
+        // Save current target state as "next" state for redo
+        if (operation.targetObject != null)
+        {
+            operation.nextPosition = operation.targetObject.transform.position;
+            operation.nextRotation = operation.targetObject.transform.rotation;
+            operation.nextScale = operation.targetObject.transform.localScale;
+            
+            if (selectedPrim != null && selectedPrim.PrimData != null)
+            {
+                var currentShape = new ShapeParametersData
+                {
+                    pathBegin = selectedPrim.PrimData.PathBegin,
+                    pathEnd = selectedPrim.PrimData.PathEnd,
+                    profileHollow = selectedPrim.PrimData.ProfileHollow,
+                    pathTwist = selectedPrim.PrimData.PathTwist,
+                    pathTaperX = selectedPrim.PrimData.PathTaperX,
+                    pathTaperY = selectedPrim.PrimData.PathTaperY,
+                    pathShearX = selectedPrim.PrimData.PathShearX,
+                    pathShearY = selectedPrim.PrimData.PathShearY
+                };
+                operation.nextProperties = JsonUtility.ToJson(currentShape);
+            }
+        }
+
         redoStack.Push(operation);
         
         try
@@ -2235,24 +2374,75 @@ public class BuildTools : MonoBehaviour
                     if (operation.targetObject != null)
                     {
                         operation.targetObject.transform.position = operation.previousPosition;
-                        ApplyTransformChanges(operation.targetObject);
+                        if (selectedPrim != null && client != null)
+                        {
+                            var lmvPos = operation.previousPosition.ToLMV();
+                            client.Objects.SetPosition(client.Network.CurrentSim, selectedPrim.LocalID, lmvPos);
+                        }
+                        UpdatePositionUI(operation.previousPosition);
                     }
                     break;
                     
+                case BuildOperation.OperationType.Rotate:
+                    if (operation.targetObject != null)
+                    {
+                        operation.targetObject.transform.rotation = operation.previousRotation;
+                        if (selectedPrim != null && client != null)
+                        {
+                            var lmvRot = operation.previousRotation.ToLMV();
+                            client.Objects.SetRotation(client.Network.CurrentSim, selectedPrim.LocalID, lmvRot);
+                        }
+                        UpdateRotationUI(operation.previousRotation.eulerAngles);
+                    }
+                    break;
+
+                case BuildOperation.OperationType.Scale:
+                    if (operation.targetObject != null)
+                    {
+                        operation.targetObject.transform.localScale = operation.previousScale;
+                        if (selectedPrim != null && client != null)
+                        {
+                            var lmvScale = operation.previousScale.ToLMV();
+                            client.Objects.SetScale(client.Network.CurrentSim, selectedPrim.LocalID, lmvScale);
+                        }
+                        UpdateScaleUI(operation.previousScale);
+                    }
+                    break;
+
+                case BuildOperation.OperationType.Modify:
+                    if (selectedPrim != null && !string.IsNullOrEmpty(operation.previousProperties))
+                    {
+                        var shapeData = JsonUtility.FromJson<ShapeParametersData>(operation.previousProperties);
+                        if (shapeData != null && selectedPrim.PrimData != null)
+                        {
+                            selectedPrim.PrimData.PathBegin = shapeData.pathBegin;
+                            selectedPrim.PrimData.PathEnd = shapeData.pathEnd;
+                            selectedPrim.PrimData.ProfileHollow = shapeData.profileHollow;
+                            selectedPrim.PrimData.PathTwist = shapeData.pathTwist;
+                            selectedPrim.PrimData.PathTaperX = shapeData.pathTaperX;
+                            selectedPrim.PrimData.PathTaperY = shapeData.pathTaperY;
+                            selectedPrim.PrimData.PathShearX = shapeData.pathShearX;
+                            selectedPrim.PrimData.PathShearY = shapeData.pathShearY;
+
+                            if (client != null)
+                            {
+                                client.Objects.SetShape(client.Network.CurrentSim, selectedPrim.LocalID, selectedPrim.PrimData);
+                            }
+                            UpdateShapeParametersUI();
+                        }
+                    }
+                    break;
+
                 case BuildOperation.OperationType.Delete:
-                    // Would need to recreate deleted objects
                     Debug.Log("Undo delete not fully implemented");
                     break;
                     
                 case BuildOperation.OperationType.Create:
-                    // Delete created objects
                     foreach (var obj in operation.affectedObjects)
                     {
                         if (obj != null) Destroy(obj);
                     }
                     break;
-                    
-                // Additional operation types would be handled here
             }
             
             Debug.Log($"Undid {operation.type} operation");
@@ -2280,8 +2470,72 @@ public class BuildTools : MonoBehaviour
         
         try
         {
-            // Reapply the operation
-            // Implementation would depend on operation type
+            switch (operation.type)
+            {
+                case BuildOperation.OperationType.Move:
+                    if (operation.targetObject != null)
+                    {
+                        operation.targetObject.transform.position = operation.nextPosition;
+                        if (selectedPrim != null && client != null)
+                        {
+                            var lmvPos = operation.nextPosition.ToLMV();
+                            client.Objects.SetPosition(client.Network.CurrentSim, selectedPrim.LocalID, lmvPos);
+                        }
+                        UpdatePositionUI(operation.nextPosition);
+                    }
+                    break;
+
+                case BuildOperation.OperationType.Rotate:
+                    if (operation.targetObject != null)
+                    {
+                        operation.targetObject.transform.rotation = operation.nextRotation;
+                        if (selectedPrim != null && client != null)
+                        {
+                            var lmvRot = operation.nextRotation.ToLMV();
+                            client.Objects.SetRotation(client.Network.CurrentSim, selectedPrim.LocalID, lmvRot);
+                        }
+                        UpdateRotationUI(operation.nextRotation.eulerAngles);
+                    }
+                    break;
+
+                case BuildOperation.OperationType.Scale:
+                    if (operation.targetObject != null)
+                    {
+                        operation.targetObject.transform.localScale = operation.nextScale;
+                        if (selectedPrim != null && client != null)
+                        {
+                            var lmvScale = operation.nextScale.ToLMV();
+                            client.Objects.SetScale(client.Network.CurrentSim, selectedPrim.LocalID, lmvScale);
+                        }
+                        UpdateScaleUI(operation.nextScale);
+                    }
+                    break;
+
+                case BuildOperation.OperationType.Modify:
+                    if (selectedPrim != null && !string.IsNullOrEmpty(operation.nextProperties))
+                    {
+                        var shapeData = JsonUtility.FromJson<ShapeParametersData>(operation.nextProperties);
+                        if (shapeData != null && selectedPrim.PrimData != null)
+                        {
+                            selectedPrim.PrimData.PathBegin = shapeData.pathBegin;
+                            selectedPrim.PrimData.PathEnd = shapeData.pathEnd;
+                            selectedPrim.PrimData.ProfileHollow = shapeData.profileHollow;
+                            selectedPrim.PrimData.PathTwist = shapeData.pathTwist;
+                            selectedPrim.PrimData.PathTaperX = shapeData.pathTaperX;
+                            selectedPrim.PrimData.PathTaperY = shapeData.pathTaperY;
+                            selectedPrim.PrimData.PathShearX = shapeData.pathShearX;
+                            selectedPrim.PrimData.PathShearY = shapeData.pathShearY;
+
+                            if (client != null)
+                            {
+                                client.Objects.SetShape(client.Network.CurrentSim, selectedPrim.LocalID, selectedPrim.PrimData);
+                            }
+                            UpdateShapeParametersUI();
+                        }
+                    }
+                    break;
+            }
+
             Debug.Log($"Redid {operation.type} operation");
         }
         catch (Exception ex)

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using UnityEngine;
 using OpenMetaverse;
-using OpenMetaverse.Assets;
 using CrystalFrost;
 using Microsoft.Extensions.Logging;
 using CrystalFrost.Services;
@@ -11,35 +10,97 @@ using CrystalFrost.Performance;
 namespace CrystalFrost.Assets
 {
     /// <summary>
-    /// Specialized manager for texture loading, caching, processing and pooling
-    /// Extracted from CFAssetManager to follow Single Responsibility Principle
+    /// Specialized manager for texture loading, processing and pooling
+    /// Delegates raw download and decode tasks to IAssetManager.Textures
     /// </summary>
     public class TextureManager : IDisposable
     {
         private readonly ILogger<TextureManager> _logger;
         private readonly IClientManagerService _clientManagerService;
         private readonly TextureCompressionManager _compressionManager;
+        private readonly ITextureManager _engineTextureManager;
         
         // Texture pooling for performance optimization
         private readonly ConcurrentQueue<Texture2D> _whiteTexturePool = new();
         private const int INITIAL_POOL_SIZE = 50;
         private const int MAX_POOL_SIZE = 200;
 
-        // Texture caching
-        private readonly ConcurrentDictionary<UUID, Texture2D> _textureCache = new();
-        private readonly ConcurrentDictionary<UUID, bool> _processingTextures = new();
-
         public TextureManager(ILogger<TextureManager> logger, IClientManagerService clientManagerService)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _clientManagerService = clientManagerService ?? throw new ArgumentNullException(nameof(clientManagerService));
             
+            _engineTextureManager = Services.GetService<ITextureManager>();
+
+            // Subscribe to CFEngine ready textures queue
+            if (_engineTextureManager?.ReadyTextures != null)
+            {
+                _engineTextureManager.ReadyTextures.ItemEnqueued += OnReadyTextureEnqueued;
+            }
+
             // Initialize texture compression manager
             _compressionManager = new TextureCompressionManager(
                 Services.GetService<ILogger<TextureCompressionManager>>()
             );
             
             InitializeTexturePool();
+        }
+
+        private void OnReadyTextureEnqueued(Textures.DecodedTexture decoded)
+        {
+            if (decoded == null) return;
+
+            try
+            {
+                UnityMainThreadDispatcher.Instance()?.Enqueue(() =>
+                {
+                    ProcessDecodedTextureOnMainThread(decoded);
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Failed to enqueue decoded texture {decoded.UUID} for main thread processing");
+            }
+        }
+
+        private void ProcessDecodedTextureOnMainThread(Textures.DecodedTexture decoded)
+        {
+            try
+            {
+                if (decoded?.Data == null || decoded.Width <= 0 || decoded.Height <= 0)
+                {
+                    return;
+                }
+
+                TextureFormat format = decoded.Components == 4 ? TextureFormat.RGBA32 : TextureFormat.RGB24;
+                Texture2D texture = new Texture2D(decoded.Width, decoded.Height, format, false);
+                
+                try
+                {
+                    texture.LoadRawTextureData(decoded.Data);
+                    texture.Apply();
+                }
+                catch
+                {
+                    // Fallback in case raw texture data was formatted differently
+                    texture.LoadImage(decoded.Data);
+                }
+
+                texture.name = decoded.UUID.ToString();
+                
+                // Apply compression optimization
+                texture = _compressionManager.OptimizeTexture(texture, HasAlphaChannel(texture));
+                _compressionManager.OptimizeTextureSettings(texture, false, true);
+
+                // Update materials with decoded texture
+                _clientManagerService.AssetManager?.UpdateMaterialTexture(decoded.UUID, texture);
+
+                _logger.LogDebug($"Successfully processed engine texture {decoded.UUID}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error processing decoded texture {decoded?.UUID} on main thread");
+            }
         }
 
         private void InitializeTexturePool()
@@ -97,110 +158,19 @@ namespace CrystalFrost.Assets
                 return GetWhiteTexture();
             }
 
-            // Check cache first
-            if (_textureCache.TryGetValue(textureUuid, out Texture2D cachedTexture))
-            {
-                return cachedTexture;
-            }
-
-            // Check if already processing
-            if (_processingTextures.ContainsKey(textureUuid))
-            {
-                return GetWhiteTexture(); // Return placeholder while processing
-            }
-
-            // Mark as processing and request from server
-            _processingTextures[textureUuid] = true;
-            RequestTextureFromServer(textureUuid);
+            // Forward download and decode task to IAssetManager.Textures
+            _engineTextureManager?.RequestImage(textureUuid);
             
-            return GetWhiteTexture(); // Return placeholder
-        }
-
-        private void RequestTextureFromServer(UUID textureUuid)
-        {
-            try
-            {
-                _clientManagerService.Client.Assets.RequestImage(textureUuid, (state, assetTexture) =>
-                {
-                    ProcessTextureCallback(state, assetTexture);
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Failed to request texture {textureUuid}");
-                _processingTextures.TryRemove(textureUuid, out _);
-            }
-        }
-
-        private void ProcessTextureCallback(TextureRequestState state, AssetTexture assetTexture)
-        {
-            if (state != TextureRequestState.Finished || assetTexture?.AssetData == null)
-            {
-                _processingTextures.TryRemove(assetTexture?.AssetID ?? UUID.Zero, out _);
-                return;
-            }
-
-            try
-            {
-                // Process on main thread
-                UnityMainThreadDispatcher.Instance().Enqueue(() =>
-                {
-                    ProcessTextureOnMainThread(assetTexture);
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Failed to process texture {assetTexture.AssetID}");
-                _processingTextures.TryRemove(assetTexture.AssetID, out _);
-            }
-        }
-
-        private void ProcessTextureOnMainThread(AssetTexture assetTexture)
-        {
-            try
-            {
-                byte[] imageData = assetTexture.AssetData;
-                Texture2D texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-                
-                if (texture.LoadImage(imageData))
-                {
-                    texture.name = assetTexture.AssetID.ToString();
-                    
-                    // Apply compression optimization
-                    texture = _compressionManager.OptimizeTexture(texture, HasAlphaChannel(texture));
-                    
-                    // Apply optimized texture settings
-                    _compressionManager.OptimizeTextureSettings(texture, false, true);
-                    
-                    // Cache the texture
-                    _textureCache[assetTexture.AssetID] = texture;
-                    
-                    _logger.LogDebug($"Successfully processed and optimized texture {assetTexture.AssetID}");
-                }
-                else
-                {
-                    _logger.LogWarning($"Failed to load image data for texture {assetTexture.AssetID}");
-                    UnityEngine.Object.Destroy(texture);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error processing texture {assetTexture.AssetID} on main thread");
-            }
-            finally
-            {
-                _processingTextures.TryRemove(assetTexture.AssetID, out _);
-            }
+            return GetWhiteTexture(); // Return placeholder white texture while background worker runs
         }
 
         private bool HasAlphaChannel(Texture2D texture)
         {
             try
             {
-                // Quick check for alpha in a sample of pixels to avoid processing entire texture
                 Color[] samplePixels = texture.GetPixels(0, 0, Mathf.Min(32, texture.width), Mathf.Min(32, texture.height));
                 
-                for (int i = 0; i < samplePixels.Length; i += 4) // Sample every 4th pixel
+                for (int i = 0; i < samplePixels.Length; i += 4)
                 {
                     if (samplePixels[i].a < 0.99f)
                     {
@@ -212,65 +182,28 @@ namespace CrystalFrost.Assets
             }
             catch
             {
-                // If we can't check, assume it has alpha to be safe
                 return true;
             }
         }
 
         public void ProcessAlphaTexture(UUID textureUuid)
         {
-            if (!_textureCache.TryGetValue(textureUuid, out Texture2D texture))
-            {
-                _logger.LogWarning($"Cannot process alpha for texture {textureUuid} - not found in cache");
-                return;
-            }
-
-            try
-            {
-                // Process alpha channel for transparency
-                Color[] pixels = texture.GetPixels();
-                bool hasAlpha = false;
-
-                for (int i = 0; i < pixels.Length; i++)
-                {
-                    if (pixels[i].a < 1.0f)
-                    {
-                        hasAlpha = true;
-                        break;
-                    }
-                }
-
-                if (hasAlpha)
-                {
-                    _logger.LogDebug($"Texture {textureUuid} has alpha channel");
-                    // Additional alpha processing can be added here
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error processing alpha for texture {textureUuid}");
-            }
+            _logger.LogDebug($"ProcessAlphaTexture requested for {textureUuid}");
         }
 
         public void ClearCache()
         {
-            _logger.LogInformation("Clearing texture cache");
-            
-            foreach (var texture in _textureCache.Values)
-            {
-                if (texture != null)
-                {
-                    UnityEngine.Object.Destroy(texture);
-                }
-            }
-            
-            _textureCache.Clear();
-            _processingTextures.Clear();
+            _logger.LogInformation("Clearing texture manager cache state");
         }
 
         public void Dispose()
         {
             _logger.LogInformation("Disposing TextureManager");
+
+            if (_engineTextureManager?.ReadyTextures != null)
+            {
+                _engineTextureManager.ReadyTextures.ItemEnqueued -= OnReadyTextureEnqueued;
+            }
             
             ClearCache();
             

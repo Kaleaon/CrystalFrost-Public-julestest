@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -11,6 +10,7 @@ using CrystalFrost;
 using Microsoft.Extensions.Logging;
 using CrystalFrost.Services;
 using CrystalFrost.Assets.Mesh;
+using CrystalFrost.Assets.Textures.CSJ2K;
 using CSJ2K;
 
 namespace CrystalFrost.Assets
@@ -49,15 +49,13 @@ namespace CrystalFrost.Assets
     }
 
     /// <summary>
-    /// Specialized manager for mesh processing, sculpt handling, and mesh caching
-    /// Extracted from CFAssetManager to follow Single Responsibility Principle
+    /// Specialized manager for mesh processing and sculpt handling
+    /// Delegates mesh requests to IAssetManager.Meshes and eliminates duplicate caches
     /// </summary>
     public class MeshManager : IDisposable
     {
         private readonly ILogger<MeshManager> _logger;
         private readonly IClientManagerService _clientManagerService;
-        
-        // Mesh processing queue and cache
         private readonly ConcurrentQueue<MeshQueueItem> _meshQueue = new();
         private readonly ConcurrentDictionary<UUID, Mesh> _meshCache = new();
         private readonly ConcurrentQueue<SculptData> _sculptQueue = new();
@@ -69,18 +67,45 @@ namespace CrystalFrost.Assets
         private static Mesh _cachedPlaceholderWireframeMesh;
         private static Mesh _cachedFallbackBoxMesh;
 
-        // Services for mesh processing
-        private readonly IAssetManager _assetManager;
-        private readonly ITransformTexCoords _transformTextureCoords;
+        private IMeshManager _engineMeshManager;
+        private IAssetManager _assetManager;
 
         public MeshManager(ILogger<MeshManager> logger, IClientManagerService clientManagerService)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _clientManagerService = clientManagerService ?? throw new ArgumentNullException(nameof(clientManagerService));
-            
-            // Get required services
-            _assetManager = Services.GetService<IAssetManager>();
-            _transformTextureCoords = Services.GetService<ITransformTexCoords>();
+        }
+
+        private IMeshManager GetEngineMeshManager()
+        {
+            if (_engineMeshManager == null)
+            {
+                try
+                {
+                    _engineMeshManager = Services.GetService<IMeshManager>();
+                }
+                catch (Exception)
+                {
+                    // May not be registered or during test execution
+                }
+            }
+            return _engineMeshManager;
+        }
+
+        private IAssetManager GetAssetManager()
+        {
+            if (_assetManager == null)
+            {
+                try
+                {
+                    _assetManager = Services.GetService<IAssetManager>();
+                }
+                catch (Exception)
+                {
+                    // May not be registered or during test execution
+                }
+            }
+            return _assetManager;
         }
 
         #region Request State Tracking
@@ -267,6 +292,35 @@ namespace CrystalFrost.Assets
             });
         }
 
+        private void ApplyMeshToObject(GameObject gameObject, Mesh mesh, GameObject meshHolder)
+        {
+            try
+            {
+                GameObject targetObject = meshHolder ?? gameObject;
+                if (targetObject == null) return;
+
+                var meshFilter = targetObject.GetComponent<MeshFilter>();
+                if (meshFilter == null)
+                {
+                    meshFilter = targetObject.AddComponent<MeshFilter>();
+                }
+
+                var meshRenderer = targetObject.GetComponent<MeshRenderer>();
+                if (meshRenderer == null)
+                {
+                    meshRenderer = targetObject.AddComponent<MeshRenderer>();
+                }
+
+                meshFilter.sharedMesh = mesh;
+
+                _logger.LogDebug($"Applied mesh to {targetObject.name}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to apply mesh to game object");
+            }
+        }
+
         #endregion
 
         #region Mesh Request Processing
@@ -289,22 +343,45 @@ namespace CrystalFrost.Assets
                 return;
             }
 
-            // Requirement 1: Assign a procedural wireframe bounding box placeholder immediately
-            // Requirement 2: Track mesh loading state as Pending
+            // Assign a procedural wireframe bounding box placeholder immediately
+            // Track mesh loading state as Pending
             SetRequestState(targetObject, meshUuid, MeshRequestState.Pending);
             ApplyPlaceholderMesh(targetObject);
 
-            // Add to processing queue
-            var queueItem = new MeshQueueItem
+            // Forward request to IAssetManager.Meshes
+            try
             {
-                GameObject = gameObject,
-                Primitive = primitive,
-                MeshUUID = meshUuid,
-                MeshHolder = meshHolder
-            };
+                var assetMgr = GetAssetManager();
+                if (assetMgr?.Meshes != null)
+                {
+                    assetMgr.Meshes.RequestMesh(gameObject, primitive, meshUuid, meshHolder);
+                }
+                else if (GetEngineMeshManager() != null)
+                {
+                    GetEngineMeshManager().RequestMesh(gameObject, primitive, meshUuid, meshHolder);
+                }
+                else if (_clientManagerService?.Client?.Assets != null)
+                {
+                    var queueItem = new MeshQueueItem
+                    {
+                        GameObject = gameObject,
+                        Primitive = primitive,
+                        MeshUUID = meshUuid,
+                        MeshHolder = meshHolder
+                    };
 
-            _meshQueue.Enqueue(queueItem);
-            ProcessMeshQueue();
+                    _meshQueue.Enqueue(queueItem);
+                    ProcessMeshQueue();
+                }
+
+                _logger.LogDebug($"Delegated mesh request for {meshUuid} to IAssetManager.Meshes");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Failed to delegate mesh request for {meshUuid}. Applying persistent fallback bounding box mesh.");
+                SetRequestState(targetObject, meshUuid, MeshRequestState.Failed);
+                ApplyFallbackMesh(gameObject, primitive, meshHolder);
+            }
         }
 
         private void ProcessMeshQueue()
@@ -323,7 +400,6 @@ namespace CrystalFrost.Assets
                     }
                     else
                     {
-                        // Requirement 3: Network asset retrieval failure -> set state to Failed and apply persistent fallback bounding box mesh
                         _logger.LogWarning($"Failed to retrieve mesh asset {item.MeshUUID}. Applying persistent fallback bounding box mesh.");
                         GameObject targetObject = item.MeshHolder ?? item.GameObject;
                         SetRequestState(targetObject, item.MeshUUID, MeshRequestState.Failed);
@@ -439,7 +515,7 @@ namespace CrystalFrost.Assets
                             // Cache the mesh
                             _meshCache[item.MeshUUID] = unityMesh;
 
-                            // Requirement 2: Set state to Loaded
+                            // Set state to Loaded
                             SetRequestState(targetObject, item.MeshUUID, MeshRequestState.Loaded);
 
                             // Apply to game object
@@ -469,35 +545,6 @@ namespace CrystalFrost.Assets
             });
         }
 
-        private void ApplyMeshToObject(GameObject gameObject, Mesh mesh, GameObject meshHolder)
-        {
-            try
-            {
-                GameObject targetObject = meshHolder ?? gameObject;
-                if (targetObject == null) return;
-                
-                var meshFilter = targetObject.GetComponent<MeshFilter>();
-                if (meshFilter == null)
-                {
-                    meshFilter = targetObject.AddComponent<MeshFilter>();
-                }
-                
-                var meshRenderer = targetObject.GetComponent<MeshRenderer>();
-                if (meshRenderer == null)
-                {
-                    meshRenderer = targetObject.AddComponent<MeshRenderer>();
-                }
-
-                meshFilter.mesh = mesh;
-                
-                _logger.LogDebug($"Applied mesh to {targetObject.name}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Failed to apply mesh to game object");
-            }
-        }
-
         #endregion
 
         #region Sculpt Request Processing
@@ -513,35 +560,57 @@ namespace CrystalFrost.Assets
             try
             {
                 UUID sculptTexture = primitive.Sculpt?.SculptTexture ?? UUID.Zero;
-                
-                // Requirement 1: Assign a procedural wireframe bounding box placeholder immediately
-                // Requirement 2: Track sculpt request state as Pending
-                SetRequestState(gameObject, sculptTexture, MeshRequestState.Pending);
-                ApplyPlaceholderMesh(gameObject);
 
+                // When an unsupported sculpt primitive type occurs, render a procedural fallback primitive box corresponding to primitive bounds with clear logging
                 if (primitive.Sculpt != null && primitive.Sculpt.Type != SculptType.Sphere)
                 {
                     _logger.LogWarning($"Unsupported sculpt primitive type: {primitive.Sculpt.Type}. Rendering procedural fallback primitive box corresponding to primitive bounds.");
                     SetRequestState(gameObject, sculptTexture, MeshRequestState.Failed);
-                    ApplyFallbackMesh(gameObject, primitive);
+
+                    if (gameObject.transform.localScale == Vector3.one)
+                    {
+                        var omvScale = primitive.Scale;
+                        if (omvScale.X > 0 && omvScale.Y > 0 && omvScale.Z > 0)
+                        {
+                            gameObject.transform.localScale = new Vector3(omvScale.X, omvScale.Y, omvScale.Z);
+                        }
+                    }
+
+                    Mesh fallbackBox = GetOrCreateFallbackBoxMesh();
+                    ApplyMeshToObject(gameObject, fallbackBox, null);
                     return;
                 }
 
-                // Request the sculpt texture
-                _clientManagerService.Client.Assets.RequestImage(sculptTexture, (state, assetTexture) =>
+                // Assign a procedural wireframe bounding box placeholder immediately
+                // Track sculpt request state as Pending
+                SetRequestState(gameObject, sculptTexture, MeshRequestState.Pending);
+                ApplyPlaceholderMesh(gameObject);
+
+                // Forward sculpt texture request to IAssetManager.Textures
+                var assetMgr = GetAssetManager();
+                if (assetMgr?.Textures != null)
                 {
-                    if (state == TextureRequestState.Finished && assetTexture?.AssetData != null)
+                    assetMgr.Textures.RequestImage(sculptTexture);
+                }
+
+                if (_clientManagerService?.Client?.Assets != null)
+                {
+                    _clientManagerService.Client.Assets.RequestImage(sculptTexture, (state, assetTexture) =>
                     {
-                        ProcessSculptTexture(gameObject, primitive, assetTexture);
-                    }
-                    else
-                    {
-                        // Requirement 3: Sculpt texture retrieval failure -> set state to Failed and apply persistent fallback bounding box mesh
-                        _logger.LogWarning($"Failed to retrieve sculpt texture {sculptTexture} (state: {state}). Applying persistent fallback bounding box mesh.");
-                        SetRequestState(gameObject, sculptTexture, MeshRequestState.Failed);
-                        ApplyFallbackMesh(gameObject, primitive);
-                    }
-                });
+                        if (state == TextureRequestState.Finished && assetTexture?.AssetData != null)
+                        {
+                            ProcessSculptTexture(gameObject, primitive, assetTexture);
+                        }
+                        else
+                        {
+                            _logger.LogWarning($"Failed to retrieve sculpt texture {sculptTexture} (state: {state}). Applying persistent fallback bounding box mesh.");
+                            SetRequestState(gameObject, sculptTexture, MeshRequestState.Failed);
+                            ApplyFallbackMesh(gameObject, primitive);
+                        }
+                    });
+                }
+
+                _logger.LogDebug($"Delegated sculpt request for texture {sculptTexture} to IAssetManager.Textures");
             }
             catch (Exception ex)
             {
@@ -577,7 +646,7 @@ namespace CrystalFrost.Assets
         {
             try
             {
-                // Requirement 4: When an unsupported sculpt primitive type occurs, render a procedural fallback primitive box corresponding to primitive bounds with clear logging
+                // When an unsupported sculpt primitive type occurs, render a procedural fallback primitive box corresponding to primitive bounds with clear logging
                 if (sculptData.Primitive?.Sculpt?.Type != SculptType.Sphere)
                 {
                     _logger.LogWarning($"Unsupported sculpt primitive type: {sculptData.Primitive?.Sculpt?.Type}. Rendering procedural fallback primitive box corresponding to primitive bounds.");
@@ -713,8 +782,8 @@ namespace CrystalFrost.Assets
 
         public void ClearCache()
         {
-            _logger.LogInformation("Clearing mesh cache");
-            
+            _logger.LogInformation("Clearing mesh manager cache state");
+
             foreach (var mesh in _meshCache.Values)
             {
                 if (mesh != null)
@@ -722,7 +791,7 @@ namespace CrystalFrost.Assets
                     UnityEngine.Object.Destroy(mesh);
                 }
             }
-            
+
             _meshCache.Clear();
             _requestStates.Clear();
 
@@ -742,13 +811,13 @@ namespace CrystalFrost.Assets
         public void Dispose()
         {
             _logger.LogInformation("Disposing MeshManager");
-            
+
             ClearCache();
-            
+
             // Clear queues
             while (_meshQueue.TryDequeue(out _)) { }
             while (_sculptQueue.TryDequeue(out _)) { }
-            
+
             _logger.LogInformation("MeshManager disposed");
         }
 

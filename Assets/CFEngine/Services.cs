@@ -198,7 +198,7 @@ namespace CrystalFrost
 			_serviceCollection.AddScoped<IAnimationDecoder, AnimationDecoder>();
 
 			// asset manager.
-			_serviceCollection.AddSingleton<IAssetManager, AssetManager>();
+			_serviceCollection.AddSingleton<IAssetManager, CFAssetManager>();
 
 			// object pooling
 			_serviceCollection.AddSingleton<IObjectPoolingService, ObjectPoolingService>();

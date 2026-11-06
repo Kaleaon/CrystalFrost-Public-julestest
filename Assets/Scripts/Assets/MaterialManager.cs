@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using UnityEngine;
 using OpenMetaverse;
@@ -25,7 +26,14 @@ namespace CrystalFrost.Assets
             {
                 if (Material != null)
                 {
-                    UnityEngine.Object.Destroy(Material);
+                    if (Application.isPlaying)
+                    {
+                        UnityEngine.Object.Destroy(Material);
+                    }
+                    else
+                    {
+                        UnityEngine.Object.DestroyImmediate(Material);
+                    }
                     Material = null;
                 }
                 Renderers.Clear();
@@ -47,6 +55,10 @@ namespace CrystalFrost.Assets
         // Thread-safe material container management
         private readonly ConcurrentDictionary<UUID, MaterialContainer> _materialContainers = new();
         private readonly ReaderWriterLockSlim _materialLock = new(LockRecursionPolicy.NoRecursion);
+
+        // Thread-safe material binding queue for main-thread batch execution
+        public ConcurrentQueue<MaterialBindingRequest> MaterialBindingQueue { get; } = new ConcurrentQueue<MaterialBindingRequest>();
+        public ConcurrentQueue<MaterialBindingRequest> BindingQueue => MaterialBindingQueue;
 
         // Default materials
         public Material ZeroMaterial { get; private set; }
@@ -80,6 +92,19 @@ namespace CrystalFrost.Assets
 
         public Material RequestMaterial(UUID textureUuid, Renderer renderer, int subMeshIndex, Color color, float glow, bool fullbright)
         {
+            Material material = GetOrCreateMaterial(textureUuid, color, glow, fullbright);
+
+            if (renderer != null)
+            {
+                // Enqueue request for main-thread application to prevent threading race conditions
+                MaterialBindingQueue.Enqueue(new MaterialBindingRequest(renderer, subMeshIndex, material, textureUuid, color, glow, fullbright));
+            }
+
+            return material;
+        }
+
+        private Material GetOrCreateMaterial(UUID textureUuid, Color color, float glow, bool fullbright)
+        {
             try
             {
                 _materialLock.EnterReadLock();
@@ -89,8 +114,6 @@ namespace CrystalFrost.Assets
                 {
                     if (container.Material != null)
                     {
-                        AddRendererToMaterial(textureUuid, renderer);
-                        ApplyMaterialToRenderer(renderer, subMeshIndex, container.Material);
                         return container.Material;
                     }
                 }
@@ -101,10 +124,10 @@ namespace CrystalFrost.Assets
             }
 
             // Material doesn't exist, create it
-            return CreateNewMaterial(textureUuid, renderer, subMeshIndex, color, glow, fullbright);
+            return CreateNewMaterial(textureUuid, color, glow, fullbright);
         }
 
-        private Material CreateNewMaterial(UUID textureUuid, Renderer renderer, int subMeshIndex, Color color, float glow, bool fullbright)
+        private Material CreateNewMaterial(UUID textureUuid, Color color, float glow, bool fullbright)
         {
             try
             {
@@ -113,8 +136,6 @@ namespace CrystalFrost.Assets
                 // Double-check pattern - another thread might have created it
                 if (_materialContainers.TryGetValue(textureUuid, out MaterialContainer existingContainer) && existingContainer.Material != null)
                 {
-                    AddRendererToMaterial(textureUuid, renderer);
-                    ApplyMaterialToRenderer(renderer, subMeshIndex, existingContainer.Material);
                     return existingContainer.Material;
                 }
 
@@ -124,9 +145,6 @@ namespace CrystalFrost.Assets
                 // Create or update material container
                 MaterialContainer container = _materialContainers.GetOrAdd(textureUuid, _ => new MaterialContainer());
                 container.Material = material;
-                container.Renderers.Add(renderer);
-
-                ApplyMaterialToRenderer(renderer, subMeshIndex, material);
 
                 _logger.LogDebug($"Created new material for texture {textureUuid}");
                 return material;
@@ -183,38 +201,89 @@ namespace CrystalFrost.Assets
             return material;
         }
 
-        private void AddRendererToMaterial(UUID textureUuid, Renderer renderer)
+        /// <summary>
+        /// Processes enqueued material binding requests on the main thread using sharedMaterials.
+        /// Enforces frame budget limit in milliseconds to prevent stuttering during streaming spikes.
+        /// </summary>
+        public int ProcessMaterialQueue(float maxExecutionTimeMs = 2.0f)
         {
-            if (_materialContainers.TryGetValue(textureUuid, out MaterialContainer container))
+            int processedCount = 0;
+            var stopwatch = Stopwatch.StartNew();
+
+            while (MaterialBindingQueue.TryDequeue(out MaterialBindingRequest request))
             {
-                if (!container.Renderers.Contains(renderer))
+                if (request == null || request.Renderer == null)
                 {
-                    container.Renderers.Add(renderer);
+                    continue;
+                }
+
+                Material materialToApply = request.Material;
+                if (materialToApply == null && request.TextureUuid != UUID.Zero)
+                {
+                    if (_materialContainers.TryGetValue(request.TextureUuid, out MaterialContainer container) && container.Material != null)
+                    {
+                        materialToApply = container.Material;
+                    }
+                }
+
+                if (materialToApply == null)
+                {
+                    materialToApply = ZeroMaterial;
+                }
+
+                ApplyMaterialToRendererShared(request.Renderer, request.SubMeshIndex, materialToApply);
+
+                // Update container.Renderers collection exclusively on main thread
+                if (request.TextureUuid != UUID.Zero && _materialContainers.TryGetValue(request.TextureUuid, out MaterialContainer matContainer))
+                {
+                    if (!matContainer.Renderers.Contains(request.Renderer))
+                    {
+                        matContainer.Renderers.Add(request.Renderer);
+                    }
+                }
+
+                processedCount++;
+
+                if (stopwatch.Elapsed.TotalMilliseconds >= maxExecutionTimeMs)
+                {
+                    break;
                 }
             }
+
+            return processedCount;
         }
 
-        private void ApplyMaterialToRenderer(Renderer renderer, int subMeshIndex, Material material)
+        public int ProcessQueue(float maxExecutionTimeMs = 2.0f) => ProcessMaterialQueue(maxExecutionTimeMs);
+
+        private void ApplyMaterialToRendererShared(Renderer renderer, int subMeshIndex, Material material)
         {
             try
             {
                 if (renderer == null || material == null) return;
 
-                Material[] materials = renderer.materials;
-                
-                if (subMeshIndex >= 0 && subMeshIndex < materials.Length)
+                Material[] sharedMaterials = renderer.sharedMaterials;
+                if (sharedMaterials == null || sharedMaterials.Length == 0)
                 {
-                    materials[subMeshIndex] = material;
-                    renderer.materials = materials;
+                    sharedMaterials = new Material[Mathf.Max(1, subMeshIndex + 1)];
+                }
+                else if (subMeshIndex >= sharedMaterials.Length)
+                {
+                    Array.Resize(ref sharedMaterials, subMeshIndex + 1);
+                }
+
+                if (subMeshIndex >= 0 && subMeshIndex < sharedMaterials.Length)
+                {
+                    sharedMaterials[subMeshIndex] = material;
+                    renderer.sharedMaterials = sharedMaterials;
                 }
                 else
                 {
-                    _logger.LogWarning($"Invalid subMeshIndex {subMeshIndex} for renderer with {materials.Length} materials");
+                    _logger.LogWarning($"Invalid subMeshIndex {subMeshIndex} for renderer with {sharedMaterials.Length} shared materials");
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Failed to apply material to renderer at index {subMeshIndex}");
+                _logger.LogError(ex, $"Failed to apply shared material to renderer at index {subMeshIndex}");
             }
         }
 
@@ -283,7 +352,7 @@ namespace CrystalFrost.Assets
                     }
                 }
 
-                // Remove unused containers
+                // Remove unused containers and destroy materials explicitly
                 foreach (var uuid in toRemove)
                 {
                     if (_materialContainers.TryRemove(uuid, out MaterialContainer container))
@@ -292,9 +361,12 @@ namespace CrystalFrost.Assets
                     }
                 }
 
+                // Explicitly unload unused graphics assets from GPU memory
+                Resources.UnloadUnusedAssets();
+
                 if (toRemove.Count > 0)
                 {
-                    _logger.LogInformation($"Cleaned up {toRemove.Count} unused material containers");
+                    _logger.LogInformation($"Cleaned up {toRemove.Count} unused material containers and released native graphics assets");
                 }
             }
             catch (Exception ex)
@@ -315,6 +387,8 @@ namespace CrystalFrost.Assets
             {
                 _materialLock.EnterWriteLock();
 
+                while (MaterialBindingQueue.TryDequeue(out _)) { }
+
                 // Dispose all material containers
                 foreach (var container in _materialContainers.Values)
                 {
@@ -325,9 +399,18 @@ namespace CrystalFrost.Assets
                 // Dispose default materials
                 if (ZeroMaterial != null)
                 {
-                    UnityEngine.Object.Destroy(ZeroMaterial);
+                    if (Application.isPlaying)
+                    {
+                        UnityEngine.Object.Destroy(ZeroMaterial);
+                    }
+                    else
+                    {
+                        UnityEngine.Object.DestroyImmediate(ZeroMaterial);
+                    }
                     ZeroMaterial = null;
                 }
+
+                Resources.UnloadUnusedAssets();
             }
             catch (Exception ex)
             {

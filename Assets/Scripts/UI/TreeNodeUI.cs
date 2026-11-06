@@ -6,9 +6,11 @@ using UnityEngine.EventSystems;
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 using CrystalFrost;
+using CrystalFrost.UI;
 
 /// <summary>
-/// Enhanced UI node for inventory tree with comprehensive icon support and visual feedback
+/// Enhanced UI node for inventory tree with icon support, expand/collapse,
+/// selection state, and right-click context menu triggers.
 /// </summary>
 public class TreeNodeUI : MonoBehaviour, IPointerClickHandler
 {
@@ -35,6 +37,9 @@ public class TreeNodeUI : MonoBehaviour, IPointerClickHandler
     public Sprite scriptIcon;
     public Sprite wearableIcon;
     public Sprite attachmentIcon;
+    public Sprite objectIcon;
+    public Sprite gestureIcon;
+    public Sprite bodyPartIcon;
     public Sprite unknownIcon;
 
     private InventoryBase itemData;
@@ -44,7 +49,6 @@ public class TreeNodeUI : MonoBehaviour, IPointerClickHandler
     private bool isSelected = false;
     private ILogger<TreeNodeUI> _logger;
 
-    // Icon mapping for different inventory types
     private readonly Dictionary<AssetType, Sprite> _assetTypeIcons = new();
 
     private void Awake()
@@ -56,34 +60,34 @@ public class TreeNodeUI : MonoBehaviour, IPointerClickHandler
 
     private void InitializeIconMapping()
     {
-        // Map asset types to appropriate icons
         if (textureIcon != null) _assetTypeIcons[AssetType.Texture] = textureIcon;
         if (soundIcon != null) _assetTypeIcons[AssetType.Sound] = soundIcon;
         if (animationIcon != null) _assetTypeIcons[AssetType.Animation] = animationIcon;
         if (landmarkIcon != null) _assetTypeIcons[AssetType.Landmark] = landmarkIcon;
         if (noteIcon != null) _assetTypeIcons[AssetType.Notecard] = noteIcon;
         if (scriptIcon != null) _assetTypeIcons[AssetType.LSLText] = scriptIcon;
+        if (objectIcon != null) _assetTypeIcons[AssetType.Object] = objectIcon;
+        if (gestureIcon != null) _assetTypeIcons[AssetType.Gesture] = gestureIcon;
+        if (wearableIcon != null) _assetTypeIcons[AssetType.Clothing] = wearableIcon;
+        if (bodyPartIcon != null) _assetTypeIcons[AssetType.Bodypart] = bodyPartIcon;
     }
 
     private void SetupEventHandlers()
     {
-        // Setup hover effects
         EventTrigger trigger = gameObject.GetComponent<EventTrigger>() ?? gameObject.AddComponent<EventTrigger>();
         
-        // Mouse enter
         EventTrigger.Entry pointerEnter = new EventTrigger.Entry
         {
             eventID = EventTriggerType.PointerEnter
         };
-        pointerEnter.callback.AddListener((data) => OnPointerEnter());
+        pointerEnter.callback.AddListener((_) => OnPointerEnter());
         trigger.triggers.Add(pointerEnter);
         
-        // Mouse exit
         EventTrigger.Entry pointerExit = new EventTrigger.Entry
         {
             eventID = EventTriggerType.PointerExit
         };
-        pointerExit.callback.AddListener((data) => OnPointerExit());
+        pointerExit.callback.AddListener((_) => OnPointerExit());
         trigger.triggers.Add(pointerExit);
     }
 
@@ -93,8 +97,15 @@ public class TreeNodeUI : MonoBehaviour, IPointerClickHandler
         depth = nodeDepth;
         inventoryWindow = window;
 
-        itemNameText.text = data.Name;
-        indentElement.flexibleWidth = depth * 20;
+        if (itemNameText != null)
+        {
+            itemNameText.text = data != null ? data.Name : "Unknown Item";
+        }
+
+        if (indentElement != null)
+        {
+            indentElement.minWidth = depth * 18;
+        }
 
         if (data is InventoryFolder folder)
         {
@@ -106,30 +117,28 @@ public class TreeNodeUI : MonoBehaviour, IPointerClickHandler
         }
         
         UpdateBackgroundColor();
-        _logger.LogDebug($"TreeNodeUI configured for {data.Name} (Type: {data.GetType().Name})");
+        _logger?.LogDebug($"TreeNodeUI configured for {data?.Name} (Type: {data?.GetType().Name})");
     }
 
     private void SetupFolderNode(InventoryFolder folder)
     {
-        expandButton.gameObject.SetActive(true);
-        expandButton.onClick.RemoveAllListeners();
-        expandButton.onClick.AddListener(ToggleExpand);
-        
-        // Set folder icon based on expansion state
-        UpdateFolderIcon();
-        
-        // Special folder type handling
-        if (folder.PreferredType != FolderType.None)
+        if (expandButton != null)
         {
-            SetSpecialFolderIcon(folder.PreferredType);
+            expandButton.gameObject.SetActive(true);
+            expandButton.onClick.RemoveAllListeners();
+            expandButton.onClick.AddListener(ToggleExpand);
         }
+        
+        UpdateFolderIcon();
     }
 
     private void SetupItemNode(InventoryItem item)
     {
-        expandButton.gameObject.SetActive(false);
+        if (expandButton != null)
+        {
+            expandButton.gameObject.SetActive(false);
+        }
         
-        // Set icon based on item type
         SetItemIcon(item);
     }
 
@@ -137,16 +146,13 @@ public class TreeNodeUI : MonoBehaviour, IPointerClickHandler
     {
         if (itemIcon != null)
         {
-            itemIcon.sprite = isExpanded ? folderOpenIcon : folderClosedIcon;
-            itemIcon.enabled = itemIcon.sprite != null;
+            Sprite icon = isExpanded ? folderOpenIcon : folderClosedIcon;
+            if (icon != null)
+            {
+                itemIcon.sprite = icon;
+                itemIcon.enabled = true;
+            }
         }
-    }
-
-    private void SetSpecialFolderIcon(FolderType folderType)
-    {
-        // Could implement special icons for system folders like Trash, Library, etc.
-        // For now, use standard folder icons
-        UpdateFolderIcon();
     }
 
     private void SetItemIcon(InventoryItem item)
@@ -155,59 +161,84 @@ public class TreeNodeUI : MonoBehaviour, IPointerClickHandler
 
         Sprite iconToUse = unknownIcon;
 
-        // Handle different inventory item types
-        switch (item)
+        if (item is InventoryWearable wearable)
         {
-            case InventoryWearable wearable:
-                iconToUse = wearableIcon;
-                break;
-            case InventoryAttachment attachment:
-                iconToUse = attachmentIcon;
-                break;
-            case InventoryTexture texture:
-                iconToUse = textureIcon;
-                break;
-            case InventorySound sound:
-                iconToUse = soundIcon;
-                break;
-            case InventoryAnimation animation:
-                iconToUse = animationIcon;
-                break;
-            case InventoryLandmark landmark:
-                iconToUse = landmarkIcon;
-                break;
-            case InventoryNotecard notecard:
-                iconToUse = noteIcon;
-                break;
-            case InventoryLSL script:
-                iconToUse = scriptIcon;
-                break;
-            default:
-                // Try to match by asset type if specific type doesn't match
-                if (_assetTypeIcons.TryGetValue(item.AssetType, out Sprite assetIcon))
-                {
-                    iconToUse = assetIcon;
-                }
-                break;
+            iconToUse = IsBodyPart(wearable) ? (bodyPartIcon ?? wearableIcon) : wearableIcon;
+        }
+        else if (item is InventoryAttachment)
+        {
+            iconToUse = attachmentIcon ?? objectIcon;
+        }
+        else if (item is InventoryTexture)
+        {
+            iconToUse = textureIcon;
+        }
+        else if (item is InventorySound)
+        {
+            iconToUse = soundIcon;
+        }
+        else if (item is InventoryAnimation)
+        {
+            iconToUse = animationIcon;
+        }
+        else if (item is InventoryLandmark)
+        {
+            iconToUse = landmarkIcon;
+        }
+        else if (item is InventoryNotecard)
+        {
+            iconToUse = noteIcon;
+        }
+        else if (item is InventoryLSL)
+        {
+            iconToUse = scriptIcon;
+        }
+        else if (item is InventoryObject)
+        {
+            iconToUse = objectIcon;
+        }
+        else if (item is InventoryGesture)
+        {
+            iconToUse = gestureIcon;
+        }
+        else if (_assetTypeIcons.TryGetValue(item.AssetType, out Sprite assetIcon))
+        {
+            iconToUse = assetIcon;
         }
 
-        itemIcon.sprite = iconToUse;
-        itemIcon.enabled = iconToUse != null;
+        if (iconToUse != null)
+        {
+            itemIcon.sprite = iconToUse;
+            itemIcon.enabled = true;
+        }
     }
 
-    private void ToggleExpand()
+    private bool IsBodyPart(InventoryWearable wearable)
+    {
+        WearableType type = wearable.WearableType;
+        return type == WearableType.Shape ||
+               type == WearableType.Skin ||
+               type == WearableType.Eyes ||
+               type == WearableType.Hair;
+    }
+
+    public void ToggleExpand()
     {
         isExpanded = !isExpanded;
         
-        // Update visual cue for expansion (rotate arrow)
-        expandButton.transform.localRotation = isExpanded ? Quaternion.Euler(0, 0, 90) : Quaternion.identity;
+        if (expandButton != null)
+        {
+            expandButton.transform.localRotation = isExpanded ? Quaternion.Euler(0, 0, 90) : Quaternion.identity;
+        }
         
-        // Update folder icon
         UpdateFolderIcon();
 
-        inventoryWindow.ToggleFolder(itemData as InventoryFolder, this, depth);
+        if (inventoryWindow != null && itemData is InventoryFolder folder)
+        {
+            inventoryWindow.ToggleFolder(folder, this, depth);
+        }
         
-        _logger.LogDebug($"Folder {itemData.Name} {(isExpanded ? "expanded" : "collapsed")}");
+        _logger?.LogDebug($"Folder {itemData?.Name} {(isExpanded ? "expanded" : "collapsed")}");
     }
 
     private void OnPointerEnter()
@@ -241,7 +272,7 @@ public class TreeNodeUI : MonoBehaviour, IPointerClickHandler
     }
 
     public bool IsExpanded() => isExpanded;
-    public UUID GetItemUUID() => itemData.UUID;
+    public UUID GetItemUUID() => itemData != null ? itemData.UUID : UUID.Zero;
     public InventoryBase GetItemData() => itemData;
     public bool IsSelected() => isSelected;
 
@@ -249,15 +280,18 @@ public class TreeNodeUI : MonoBehaviour, IPointerClickHandler
     {
         if (eventData.button == PointerEventData.InputButton.Right)
         {
-            // Right-click: Show context menu
-            inventoryWindow.ShowContextMenu(itemData, eventData.position);
+            if (inventoryWindow != null)
+            {
+                inventoryWindow.ShowContextMenu(itemData, eventData.position);
+            }
         }
         else if (eventData.button == PointerEventData.InputButton.Left)
         {
-            // Left-click: Select item
-            inventoryWindow.SelectItem(this);
+            if (inventoryWindow != null)
+            {
+                inventoryWindow.SelectItem(this);
+            }
             
-            // Double-click handling for items (could open properties, wear, etc.)
             if (eventData.clickCount == 2 && itemData is InventoryItem item)
             {
                 HandleDoubleClick(item);
@@ -269,36 +303,26 @@ public class TreeNodeUI : MonoBehaviour, IPointerClickHandler
     {
         try
         {
-            // Default double-click behavior based on item type
-            switch (item)
+            if (item is InventoryWearable || item is InventoryAttachment || item is InventoryObject)
             {
-                case InventoryWearable wearable:
-                case InventoryAttachment attachment:
-                    // Wear/attach the item
-                    ClientManager.client.Appearance.AddToOutfit(new System.Collections.Generic.List<InventoryItem> { item }, true);
-                    _logger.LogInformation($"Double-clicked to wear/attach: {item.Name}");
-                    break;
-                case InventoryTexture texture:
-                    // Could open texture preview
-                    _logger.LogInformation($"Double-clicked texture: {item.Name}");
-                    break;
-                case InventoryNotecard notecard:
-                    // Could open notecard editor
-                    _logger.LogInformation($"Double-clicked notecard: {item.Name}");
-                    break;
-                default:
-                    _logger.LogDebug($"Double-clicked item: {item.Name} (Type: {item.GetType().Name})");
-                    break;
+                if (ClientManager.client != null && ClientManager.client.Appearance != null)
+                {
+                    ClientManager.client.Appearance.AddToOutfit(new List<InventoryItem> { item }, true);
+                }
+                _logger?.LogInformation($"Double-clicked to wear/attach: {item.Name}");
             }
         }
         catch (System.Exception ex)
         {
-            _logger.LogError(ex, $"Error handling double-click for item: {item.Name}");
+            _logger?.LogError(ex, $"Error handling double-click for item: {item.Name}");
         }
     }
 
     private void OnDestroy()
     {
-        expandButton?.onClick.RemoveAllListeners();
+        if (expandButton != null)
+        {
+            expandButton.onClick.RemoveAllListeners();
+        }
     }
 }

@@ -7,6 +7,8 @@ using OpenMetaverse;
 using CrystalFrost;
 using CrystalFrost.Client.Credentials;
 using CrystalFrost.Config;
+using CrystalFrost.Exceptions;
+using CrystalFrost.Services;
 using CrystalFrost.Scripts;
 using Microsoft.Extensions.Logging;
 using LoginCredential = CrystalFrost.Client.Credentials.LoginCredential;
@@ -27,6 +29,7 @@ namespace CrystalFrost.Controllers
         private ICredentialsStore _credentials;
         private ILoginUriProvider _loginUriProvider;
         private IClientManagerService _clientManagerService;
+        private IUserFriendlyExceptionMapper _exceptionMapper;
         private LoginCredential _currentCredential;
 
         private EventHandler<CapabilitiesReceivedEventArgs> _capabilitiesReceivedHandler;
@@ -41,6 +44,14 @@ namespace CrystalFrost.Controllers
             _logger = Services.GetService<ILogger<AuthenticationController>>();
             _loginUriProvider = Services.GetService<ILoginUriProvider>();
             _credentials = Services.GetService<ICredentialsStore>();
+            try
+            {
+                _exceptionMapper = Services.GetService<IUserFriendlyExceptionMapper>() ?? new UserFriendlyExceptionMapper();
+            }
+            catch
+            {
+                _exceptionMapper = new UserFriendlyExceptionMapper();
+            }
             _clientManagerService = ClientManager.GetService();
             _capabilitiesReceivedHandler = OnCapabilitiesReceived;
         }
@@ -77,7 +88,29 @@ namespace CrystalFrost.Controllers
             }
 
             _isLoggingIn = true;
-            Task.Run(async () => await PerformLoginWithRetryAsync(firstName, lastName, password, customGridURL));
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await PerformLoginWithRetryAsync(firstName, lastName, password, customGridURL);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Exception during login");
+                    var mapper = _exceptionMapper ?? new UserFriendlyExceptionMapper();
+                    var userMsg = mapper.Map(ex);
+                    DispatchToMainThread(() =>
+                    {
+                        OnStatusUpdate?.Invoke($"Login failed: {userMsg}");
+                        DetachCapabilitiesReceivedHandler();
+                        if (_clientManagerService != null)
+                        {
+                            _clientManagerService.Active = false;
+                        }
+                        _isLoggingIn = false;
+                    });
+                }
+            });
         }
 
         private async Task PerformLoginWithRetryAsync(string firstName, string lastName, string password, string customGridURL)
@@ -144,7 +177,9 @@ namespace CrystalFrost.Controllers
 
                     if (attempt < MaxRetryAttempts)
                     {
-                        DispatchToMainThread(() => OnStatusUpdate?.Invoke($"Attempt {attempt} failed: {lastErrorMessage}. Retrying..."));
+                        var mapper = _exceptionMapper ?? new UserFriendlyExceptionMapper();
+                        var userMsg = mapper.Map(lastErrorMessage);
+                        DispatchToMainThread(() => OnStatusUpdate?.Invoke($"Attempt {attempt} failed: {userMsg}. Retrying..."));
                     }
                 }
                 catch (Exception ex)
@@ -154,7 +189,9 @@ namespace CrystalFrost.Controllers
 
                     if (attempt < MaxRetryAttempts)
                     {
-                        DispatchToMainThread(() => OnStatusUpdate?.Invoke($"Attempt {attempt} error: {ex.Message}. Retrying..."));
+                        var mapper = _exceptionMapper ?? new UserFriendlyExceptionMapper();
+                        var userMsg = mapper.Map(ex);
+                        DispatchToMainThread(() => OnStatusUpdate?.Invoke($"Attempt {attempt} error: {userMsg}. Retrying..."));
                     }
                 }
             }
@@ -203,7 +240,9 @@ namespace CrystalFrost.Controllers
                 {
                     Console.WriteLine(System.DateTime.UtcNow.ToShortTimeString() + ": " + lastErrorMessage);
                     _logger?.LogError($"Login failed after {MaxRetryAttempts} attempts: {lastErrorMessage}");
-                    OnStatusUpdate?.Invoke($"Login failed: {lastErrorMessage}");
+                    var mapper = _exceptionMapper ?? new UserFriendlyExceptionMapper();
+                    var userMsg = mapper.Map(lastErrorMessage);
+                    OnStatusUpdate?.Invoke($"Login failed: {userMsg}");
 
                     DetachCapabilitiesReceivedHandler();
                     if (_clientManagerService != null)
@@ -329,7 +368,9 @@ namespace CrystalFrost.Controllers
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Exception during logout");
-                OnStatusUpdate?.Invoke($"Logout error: {ex.Message}");
+                var mapper = _exceptionMapper ?? new UserFriendlyExceptionMapper();
+                var userMsg = mapper.Map(ex);
+                OnStatusUpdate?.Invoke($"Logout error: {userMsg}");
             }
         }
 

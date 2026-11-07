@@ -7,6 +7,7 @@ using OpenMetaverse;
 using OpenMetaverse.Assets;
 using OpenMetaverse.Rendering;
 using CrystalFrost;
+using CrystalFrost.Exceptions;
 using Microsoft.Extensions.Logging;
 using CrystalFrost.Services;
 using CrystalFrost.Assets.Mesh;
@@ -56,9 +57,12 @@ namespace CrystalFrost.Assets
     {
         private readonly ILogger<MeshManager> _logger;
         private readonly IClientManagerService _clientManagerService;
+        private readonly IUserFriendlyExceptionMapper _exceptionMapper;
         private readonly ConcurrentQueue<MeshQueueItem> _meshQueue = new();
         private readonly ConcurrentDictionary<UUID, Mesh> _meshCache = new();
         private readonly ConcurrentQueue<SculptData> _sculptQueue = new();
+
+        public event Action<UserFriendlyMessage> OnAssetError;
 
         // Active request state tracking
         private readonly ConcurrentDictionary<string, MeshRequestState> _requestStates = new();
@@ -74,6 +78,14 @@ namespace CrystalFrost.Assets
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _clientManagerService = clientManagerService ?? throw new ArgumentNullException(nameof(clientManagerService));
+            try
+            {
+                _exceptionMapper = Services.GetService<IUserFriendlyExceptionMapper>() ?? new UserFriendlyExceptionMapper();
+            }
+            catch
+            {
+                _exceptionMapper = new UserFriendlyExceptionMapper();
+            }
         }
 
         private IMeshManager GetEngineMeshManager()
@@ -381,6 +393,8 @@ namespace CrystalFrost.Assets
                 _logger.LogError(ex, $"Failed to delegate mesh request for {meshUuid}. Applying persistent fallback bounding box mesh.");
                 SetRequestState(targetObject, meshUuid, MeshRequestState.Failed);
                 ApplyFallbackMesh(gameObject, primitive, meshHolder);
+                var userMsg = _exceptionMapper?.Map(ex) ?? new UserFriendlyMessage("Content Loading Notice", "Some world content could not be displayed completely. Re-entering the region or checking your network connection may help.");
+                OnAssetError?.Invoke(userMsg);
             }
         }
 
@@ -606,6 +620,8 @@ namespace CrystalFrost.Assets
                             _logger.LogWarning($"Failed to retrieve sculpt texture {sculptTexture} (state: {state}). Applying persistent fallback bounding box mesh.");
                             SetRequestState(gameObject, sculptTexture, MeshRequestState.Failed);
                             ApplyFallbackMesh(gameObject, primitive);
+                            var userMsg = _exceptionMapper?.Map($"Failed to retrieve sculpt texture {sculptTexture}") ?? new UserFriendlyMessage("Content Loading Notice", "Some world content could not be displayed completely. Re-entering the region or checking your network connection may help.");
+                            OnAssetError?.Invoke(userMsg);
                         }
                     });
                 }
@@ -618,6 +634,8 @@ namespace CrystalFrost.Assets
                 UUID sculptTexture = primitive.Sculpt?.SculptTexture ?? UUID.Zero;
                 SetRequestState(gameObject, sculptTexture, MeshRequestState.Failed);
                 ApplyFallbackMesh(gameObject, primitive);
+                var userMsg = _exceptionMapper?.Map(ex) ?? new UserFriendlyMessage("Content Loading Notice", "Some world content could not be displayed completely. Re-entering the region or checking your network connection may help.");
+                OnAssetError?.Invoke(userMsg);
             }
         }
 

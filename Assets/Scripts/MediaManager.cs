@@ -259,7 +259,7 @@ public class MediaManager : MonoBehaviour
         {
             currentParcelMediaUrl = e.MediaURL;
             if (parcelMediaUrl) parcelMediaUrl.text = e.MediaURL;
-            if (parcelMediaTitle) parcelMediaTitle.text = "Parcel Media";
+            if (parcelMediaTitle) parcelMediaTitle.text = LocalizationManager.GetString("media.title.parcel_media", "Parcel Media");
             
             // Auto-play if enabled
             if (autoPlayToggle && autoPlayToggle.isOn && !string.IsNullOrEmpty(e.MediaURL))
@@ -277,7 +277,7 @@ public class MediaManager : MonoBehaviour
             {
                 currentMusicStreamUrl = e.Result.MusicURL;
                 if (streamUrl) streamUrl.text = e.Result.MusicURL;
-                if (streamTitle) streamTitle.text = "Parcel Music";
+                if (streamTitle) streamTitle.text = LocalizationManager.GetString("media.title.parcel_music", "Parcel Music");
                 
                 // Auto-play music if enabled
                 if (autoPlayToggle && autoPlayToggle.isOn)
@@ -490,7 +490,7 @@ public class MediaManager : MonoBehaviour
             var buttonText = muteButton.GetComponentInChildren<TMP_Text>();
             if (buttonText)
             {
-                buttonText.text = audioSource.mute ? "Unmute" : "Mute";
+                buttonText.text = audioSource.mute ? LocalizationManager.GetString("media.button.unmute", "Unmute") : LocalizationManager.GetString("media.button.mute", "Mute");
             }
         }
     }
@@ -560,7 +560,7 @@ public class MediaManager : MonoBehaviour
             videoPlayer.Play();
             isPlayingParcelMedia = true;
             
-            if (mediaTitle) mediaTitle.text = "Parcel Media";
+            if (mediaTitle) mediaTitle.text = LocalizationManager.GetString("media.title.parcel_media", "Parcel Media");
         }
         catch (Exception ex)
         {
@@ -605,7 +605,7 @@ public class MediaManager : MonoBehaviour
                 musicAudioSource.Play();
                 isPlayingMusicStream = true;
                 
-                if (streamTitle) streamTitle.text = "Playing Music Stream";
+                if (streamTitle) streamTitle.text = LocalizationManager.GetString("media.title.playing_music_stream", "Playing Music Stream");
             }
             else
             {
@@ -621,7 +621,7 @@ public class MediaManager : MonoBehaviour
             musicAudioSource.Stop();
             isPlayingMusicStream = false;
             
-            if (streamTitle) streamTitle.text = "Music Stream Stopped";
+            if (streamTitle) streamTitle.text = LocalizationManager.GetString("media.title.music_stream_stopped", "Music Stream Stopped");
         }
     }
 
@@ -660,7 +660,7 @@ public class MediaManager : MonoBehaviour
             videoPlayer.url = url;
             videoPlayer.Play();
             
-            if (mediaTitle) mediaTitle.text = "Custom Media";
+            if (mediaTitle) mediaTitle.text = LocalizationManager.GetString("media.title.custom_media", "Custom Media");
         }
         catch (Exception ex)
         {

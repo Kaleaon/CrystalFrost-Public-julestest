@@ -1,12 +1,17 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 using OpenMetaverse;
+using OpenMetaverse.Assets;
+using OpenMetaverse.Rendering;
 using CrystalFrost;
 using Microsoft.Extensions.Logging;
 using CrystalFrost.Services;
 using CrystalFrost.Assets.Mesh;
+using CrystalFrost.Assets.Textures.CSJ2K;
+using CSJ2K;
 
 namespace CrystalFrost.Assets
 {
@@ -51,6 +56,9 @@ namespace CrystalFrost.Assets
     {
         private readonly ILogger<MeshManager> _logger;
         private readonly IClientManagerService _clientManagerService;
+        private readonly ConcurrentQueue<MeshQueueItem> _meshQueue = new();
+        private readonly ConcurrentDictionary<UUID, Mesh> _meshCache = new();
+        private readonly ConcurrentQueue<SculptData> _sculptQueue = new();
 
         // Active request state tracking
         private readonly ConcurrentDictionary<string, MeshRequestState> _requestStates = new();
@@ -327,6 +335,14 @@ namespace CrystalFrost.Assets
 
             GameObject targetObject = meshHolder ?? gameObject;
 
+            // Check cache first
+            if (_meshCache.TryGetValue(meshUuid, out Mesh cachedMesh))
+            {
+                SetRequestState(targetObject, meshUuid, MeshRequestState.Loaded);
+                ApplyMeshToObject(gameObject, cachedMesh, meshHolder);
+                return;
+            }
+
             // Assign a procedural wireframe bounding box placeholder immediately
             // Track mesh loading state as Pending
             SetRequestState(targetObject, meshUuid, MeshRequestState.Pending);
@@ -340,9 +356,22 @@ namespace CrystalFrost.Assets
                 {
                     assetMgr.Meshes.RequestMesh(gameObject, primitive, meshUuid, meshHolder);
                 }
-                else
+                else if (GetEngineMeshManager() != null)
                 {
-                    GetEngineMeshManager()?.RequestMesh(gameObject, primitive, meshUuid, meshHolder);
+                    GetEngineMeshManager().RequestMesh(gameObject, primitive, meshUuid, meshHolder);
+                }
+                else if (_clientManagerService?.Client?.Assets != null)
+                {
+                    var queueItem = new MeshQueueItem
+                    {
+                        GameObject = gameObject,
+                        Primitive = primitive,
+                        MeshUUID = meshUuid,
+                        MeshHolder = meshHolder
+                    };
+
+                    _meshQueue.Enqueue(queueItem);
+                    ProcessMeshQueue();
                 }
 
                 _logger.LogDebug($"Delegated mesh request for {meshUuid} to IAssetManager.Meshes");
@@ -353,6 +382,167 @@ namespace CrystalFrost.Assets
                 SetRequestState(targetObject, meshUuid, MeshRequestState.Failed);
                 ApplyFallbackMesh(gameObject, primitive, meshHolder);
             }
+        }
+
+        private void ProcessMeshQueue()
+        {
+            if (!_meshQueue.TryDequeue(out MeshQueueItem item))
+                return;
+
+            try
+            {
+                // Request mesh asset from server
+                _clientManagerService.Client.Assets.RequestMesh(item.MeshUUID, (success, meshAsset) =>
+                {
+                    if (success && meshAsset != null)
+                    {
+                        ProcessMeshAsset(item, meshAsset);
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"Failed to retrieve mesh asset {item.MeshUUID}. Applying persistent fallback bounding box mesh.");
+                        GameObject targetObject = item.MeshHolder ?? item.GameObject;
+                        SetRequestState(targetObject, item.MeshUUID, MeshRequestState.Failed);
+                        ApplyFallbackMesh(item.GameObject, item.Primitive, item.MeshHolder);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error processing mesh request for {item.MeshUUID}. Applying persistent fallback bounding box mesh.");
+                GameObject targetObject = item.MeshHolder ?? item.GameObject;
+                SetRequestState(targetObject, item.MeshUUID, MeshRequestState.Failed);
+                ApplyFallbackMesh(item.GameObject, item.Primitive, item.MeshHolder);
+            }
+        }
+
+        private void ProcessMeshAsset(MeshQueueItem item, AssetMesh meshAsset)
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    // Execute heavy binary mesh decoding on background thread
+                    if (!meshAsset.Decode())
+                    {
+                        _logger.LogWarning($"Failed to decode mesh asset {item.MeshUUID}. Transitioning target object to fallback error mesh state.");
+                        ExecuteOnMainThread(() =>
+                        {
+                            GameObject targetObject = item.MeshHolder ?? item.GameObject;
+                            SetRequestState(targetObject, item.MeshUUID, MeshRequestState.Failed);
+                            ApplyFallbackMesh(item.GameObject, item.Primitive, item.MeshHolder);
+                        });
+                        return;
+                    }
+
+                    // Extract raw vertex, normal, UV, and triangle data arrays on background thread
+                    Vector3[] vertices = null;
+                    if (meshAsset.Positions != null && meshAsset.Positions.Count > 0)
+                    {
+                        vertices = new Vector3[meshAsset.Positions.Count];
+                        for (int i = 0; i < meshAsset.Positions.Count; i++)
+                        {
+                            var omvPos = meshAsset.Positions[i];
+                            vertices[i] = new Vector3(omvPos.X, omvPos.Y, omvPos.Z);
+                        }
+                    }
+
+                    Vector3[] normals = null;
+                    if (meshAsset.Normals != null && meshAsset.Normals.Count > 0)
+                    {
+                        normals = new Vector3[meshAsset.Normals.Count];
+                        for (int i = 0; i < meshAsset.Normals.Count; i++)
+                        {
+                            var omvNormal = meshAsset.Normals[i];
+                            normals[i] = new Vector3(omvNormal.X, omvNormal.Y, omvNormal.Z);
+                        }
+                    }
+
+                    Vector2[] uvs = null;
+                    if (meshAsset.TexCoords != null && meshAsset.TexCoords.Count > 0)
+                    {
+                        uvs = new Vector2[meshAsset.TexCoords.Count];
+                        for (int i = 0; i < meshAsset.TexCoords.Count; i++)
+                        {
+                            var omvUV = meshAsset.TexCoords[i];
+                            uvs[i] = new Vector2(omvUV.X, omvUV.Y);
+                        }
+                    }
+
+                    int[] triangles = null;
+                    if (meshAsset.Indices != null && meshAsset.Indices.Count > 0)
+                    {
+                        triangles = new int[meshAsset.Indices.Count];
+                        for (int i = 0; i < meshAsset.Indices.Count; i++)
+                        {
+                            triangles[i] = (int)meshAsset.Indices[i];
+                        }
+                    }
+
+                    // Enqueue lightweight Unity mesh creation to main thread
+                    ExecuteOnMainThread(() =>
+                    {
+                        try
+                        {
+                            GameObject targetObject = item.MeshHolder ?? item.GameObject;
+                            if (targetObject == null)
+                            {
+                                return;
+                            }
+
+                            var unityMesh = new Mesh();
+                            if (vertices != null && vertices.Length > 0)
+                            {
+                                unityMesh.SetVertices(vertices);
+                            }
+                            if (normals != null && normals.Length > 0)
+                            {
+                                unityMesh.SetNormals(normals);
+                            }
+                            if (uvs != null && uvs.Length > 0)
+                            {
+                                unityMesh.SetUVs(0, uvs);
+                            }
+                            if (triangles != null && triangles.Length > 0)
+                            {
+                                unityMesh.SetTriangles(triangles, 0);
+                            }
+
+                            unityMesh.RecalculateBounds();
+                            unityMesh.RecalculateTangents();
+                            unityMesh.name = item.MeshUUID.ToString();
+
+                            // Cache the mesh
+                            _meshCache[item.MeshUUID] = unityMesh;
+
+                            // Set state to Loaded
+                            SetRequestState(targetObject, item.MeshUUID, MeshRequestState.Loaded);
+
+                            // Apply to game object
+                            ApplyMeshToObject(item.GameObject, unityMesh, item.MeshHolder);
+
+                            _logger.LogDebug($"Successfully processed mesh {item.MeshUUID}");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, $"Error building Unity mesh {item.MeshUUID} on main thread. Transitioning to fallback error mesh state.");
+                            GameObject targetObject = item.MeshHolder ?? item.GameObject;
+                            SetRequestState(targetObject, item.MeshUUID, MeshRequestState.Failed);
+                            ApplyFallbackMesh(item.GameObject, item.Primitive, item.MeshHolder);
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Failed to process mesh asset {item.MeshUUID} on background thread");
+                    ExecuteOnMainThread(() =>
+                    {
+                        GameObject targetObject = item.MeshHolder ?? item.GameObject;
+                        SetRequestState(targetObject, item.MeshUUID, MeshRequestState.Failed);
+                        ApplyFallbackMesh(item.GameObject, item.Primitive, item.MeshHolder);
+                    });
+                }
+            });
         }
 
         #endregion
@@ -402,11 +592,16 @@ namespace CrystalFrost.Assets
                 {
                     assetMgr.Textures.RequestImage(sculptTexture);
                 }
-                else if (_clientManagerService?.Client?.Assets != null)
+
+                if (_clientManagerService?.Client?.Assets != null)
                 {
                     _clientManagerService.Client.Assets.RequestImage(sculptTexture, (state, assetTexture) =>
                     {
-                        if (state != TextureRequestState.Finished || assetTexture?.AssetData == null)
+                        if (state == TextureRequestState.Finished && assetTexture?.AssetData != null)
+                        {
+                            ProcessSculptTexture(gameObject, primitive, assetTexture);
+                        }
+                        else
                         {
                             _logger.LogWarning($"Failed to retrieve sculpt texture {sculptTexture} (state: {state}). Applying persistent fallback bounding box mesh.");
                             SetRequestState(gameObject, sculptTexture, MeshRequestState.Failed);
@@ -426,6 +621,161 @@ namespace CrystalFrost.Assets
             }
         }
 
+        private void ProcessSculptTexture(GameObject gameObject, Primitive primitive, AssetTexture assetTexture)
+        {
+            if (gameObject == null || primitive == null || assetTexture?.AssetData == null)
+            {
+                _logger.LogWarning("Invalid parameters or texture data for sculpt processing");
+                return;
+            }
+
+            var sculptData = new SculptData
+            {
+                GameObject = gameObject,
+                Primitive = primitive,
+                ImageData = assetTexture.AssetData
+            };
+
+            Task.Run(() =>
+            {
+                ProcessSculptOnBackgroundThread(sculptData);
+            });
+        }
+
+        private void ProcessSculptOnBackgroundThread(SculptData sculptData)
+        {
+            try
+            {
+                // When an unsupported sculpt primitive type occurs, render a procedural fallback primitive box corresponding to primitive bounds with clear logging
+                if (sculptData.Primitive?.Sculpt?.Type != SculptType.Sphere)
+                {
+                    _logger.LogWarning($"Unsupported sculpt primitive type: {sculptData.Primitive?.Sculpt?.Type}. Rendering procedural fallback primitive box corresponding to primitive bounds.");
+                    ExecuteOnMainThread(() =>
+                    {
+                        UUID sculptTexture = sculptData.Primitive?.Sculpt?.SculptTexture ?? UUID.Zero;
+                        SetRequestState(sculptData.GameObject, sculptTexture, MeshRequestState.Failed);
+                        ApplyFallbackMesh(sculptData.GameObject, sculptData.Primitive);
+                    });
+                    return;
+                }
+
+                // Decode sculpt texture data using CSJ2K on background thread
+                RawBytesImageCreator.Register();
+                var pi = J2kImage.FromBytes(sculptData.ImageData);
+                if (pi == null)
+                {
+                    _logger.LogError("Failed to decode sculpt texture: J2kImage is null. Applying persistent fallback bounding box mesh.");
+                    ExecuteOnMainThread(() =>
+                    {
+                        UUID sculptTexture = sculptData.Primitive?.Sculpt?.SculptTexture ?? UUID.Zero;
+                        SetRequestState(sculptData.GameObject, sculptTexture, MeshRequestState.Failed);
+                        ApplyFallbackMesh(sculptData.GameObject, sculptData.Primitive);
+                    });
+                    return;
+                }
+                var rawImage = pi.As<RawBytesImage>();
+                int width = rawImage.Width;
+                int height = rawImage.Height;
+                byte[] imageData = rawImage.Data;
+
+                // Generate mesh data arrays from heightmap on background thread
+                var vertices = new List<Vector3>(width * height);
+                var uvs = new List<Vector2>(width * height);
+                var triangles = new List<int>((width - 1) * (height - 1) * 6);
+
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        // Get height from blue channel, as is standard for SL sculpts
+                        float z = imageData[(y * width + x) * 4 + 2] / 255.0f;
+
+                        // Map plane to sphere
+                        float lon = (x / (float)(width - 1)) * 2.0f * Mathf.PI;
+                        float lat = (y / (float)(height - 1)) * Mathf.PI;
+
+                        float radius = 0.5f * z; // Simple radius based on height
+
+                        vertices.Add(new Vector3(
+                            radius * Mathf.Sin(lat) * Mathf.Cos(lon),
+                            radius * Mathf.Cos(lat),
+                            radius * Mathf.Sin(lat) * Mathf.Sin(lon)
+                        ));
+
+                        uvs.Add(new Vector2(x / (float)width, y / (float)height));
+                    }
+                }
+
+                for (int y = 0; y < height - 1; y++)
+                {
+                    for (int x = 0; x < width - 1; x++)
+                    {
+                        int tl = y * width + x;
+                        int tr = tl + 1;
+                        int bl = (y + 1) * width + x;
+                        int br = bl + 1;
+
+                        triangles.Add(tl);
+                        triangles.Add(tr);
+                        triangles.Add(bl);
+
+                        triangles.Add(tr);
+                        triangles.Add(br);
+                        triangles.Add(bl);
+                    }
+                }
+
+                Vector3[] verticesArray = vertices.ToArray();
+                Vector2[] uvsArray = uvs.ToArray();
+                int[] trianglesArray = triangles.ToArray();
+
+                // Dispatch lightweight Unity mesh construction to main thread
+                ExecuteOnMainThread(() =>
+                {
+                    try
+                    {
+                        if (sculptData.GameObject == null)
+                        {
+                            return;
+                        }
+
+                        var sculptMesh = new Mesh
+                        {
+                            name = "SculptMesh"
+                        };
+                        sculptMesh.SetVertices(verticesArray);
+                        sculptMesh.SetUVs(0, uvsArray);
+                        sculptMesh.SetTriangles(trianglesArray, 0);
+
+                        sculptMesh.RecalculateNormals();
+                        sculptMesh.RecalculateBounds();
+
+                        UUID sculptTexture = sculptData.Primitive?.Sculpt?.SculptTexture ?? UUID.Zero;
+                        SetRequestState(sculptData.GameObject, sculptTexture, MeshRequestState.Loaded);
+
+                        ApplyMeshToObject(sculptData.GameObject, sculptMesh, null);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to build sculpt mesh on main thread");
+                        UUID sculptTexture = sculptData.Primitive?.Sculpt?.SculptTexture ?? UUID.Zero;
+                        SetRequestState(sculptData.GameObject, sculptTexture, MeshRequestState.Failed);
+                        ApplyFallbackMesh(sculptData.GameObject, sculptData.Primitive);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to process sculpt on background thread");
+                ExecuteOnMainThread(() =>
+                {
+                    UUID sculptTexture = sculptData.Primitive?.Sculpt?.SculptTexture ?? UUID.Zero;
+                    SetRequestState(sculptData.GameObject, sculptTexture, MeshRequestState.Failed);
+                    ApplyFallbackMesh(sculptData.GameObject, sculptData.Primitive);
+                });
+            }
+        }
+
         #endregion
 
         #region Cache and Disposal
@@ -433,6 +783,16 @@ namespace CrystalFrost.Assets
         public void ClearCache()
         {
             _logger.LogInformation("Clearing mesh manager cache state");
+
+            foreach (var mesh in _meshCache.Values)
+            {
+                if (mesh != null)
+                {
+                    UnityEngine.Object.Destroy(mesh);
+                }
+            }
+
+            _meshCache.Clear();
             _requestStates.Clear();
 
             if (_cachedPlaceholderWireframeMesh != null)
@@ -451,7 +811,13 @@ namespace CrystalFrost.Assets
         public void Dispose()
         {
             _logger.LogInformation("Disposing MeshManager");
+
             ClearCache();
+
+            // Clear queues
+            while (_meshQueue.TryDequeue(out _)) { }
+            while (_sculptQueue.TryDequeue(out _)) { }
+
             _logger.LogInformation("MeshManager disposed");
         }
 
